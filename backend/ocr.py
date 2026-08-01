@@ -323,44 +323,55 @@ class BaiduOCREngine(BaseOCREngine):
         wr = data.get("words_result", {})
 
         def get_word(key: str, default=""):
-            node = wr.get(key, {})
-            return node.get("word", default) if isinstance(node, dict) else default
+            node = wr.get(key, default)
+            if isinstance(node, dict):
+                return node.get("word", default)
+            elif isinstance(node, str):
+                return node
+            return default
 
         buyer_name = get_word("PurchaserName")
         buyer_tax_id = get_word("PurchaserRegisterNum")
         invoice_date = get_word("InvoiceDate")
+        # AmountInFiguers = 价税合计小写, TotalAmount = 不含税合计
         try:
-            invoice_total = float(get_word("TotalAmount", "0"))
+            invoice_total = float(get_word("AmountInFiguers", "0"))
         except (ValueError, TypeError):
             invoice_total = 0.0
 
+        # 明细行：百度API返回多个并行数组，按行号对齐
         items = []
-        commodity_list = wr.get("CommodityWord", [])
-        if isinstance(commodity_list, list):
-            for row in commodity_list:
-                name = row.get("word", "") if isinstance(row, dict) else str(row)
-                try:
-                    unit_price = float(row.get("unitPrice", 0)) if isinstance(row, dict) else 0.0
-                except (ValueError, TypeError):
-                    unit_price = 0.0
-                try:
-                    quantity = float(row.get("quantity", 1)) if isinstance(row, dict) else 1.0
-                except (ValueError, TypeError):
-                    quantity = 1.0
-                try:
-                    amount = float(row.get("amount", 0)) if isinstance(row, dict) else 0.0
-                except (ValueError, TypeError):
-                    amount = 0.0
-                try:
-                    tax_amount = float(row.get("tax", 0)) if isinstance(row, dict) else 0.0
-                except (ValueError, TypeError):
-                    tax_amount = 0.0
+        names = wr.get("CommodityName", [])
+        nums = {r["row"]: r["word"] for r in (wr.get("CommodityNum", []) or []) if "row" in r}
+        prices = {r["row"]: r["word"] for r in (wr.get("CommodityPrice", []) or []) if "row" in r}
+        amounts = {r["row"]: r["word"] for r in (wr.get("CommodityAmount", []) or []) if "row" in r}
+        taxes = {r["row"]: r["word"] for r in (wr.get("CommodityTax", []) or []) if "row" in r}
 
-                items.append(InvoiceItem(
-                    name=_clean_item_name(name), unit_price=unit_price, quantity=quantity,
-                    amount=amount, tax_amount=tax_amount,
-                    total_with_tax=amount + tax_amount,
-                ))
+        for name_row in (names or []):
+            row_id = name_row.get("row", "1")
+            name = name_row.get("word", "")
+            try:
+                up = float(prices.get(row_id, "0"))
+            except (ValueError, TypeError):
+                up = 0.0
+            try:
+                qty = float(nums.get(row_id, "1"))
+            except (ValueError, TypeError):
+                qty = 1.0
+            try:
+                amt = float(amounts.get(row_id, "0"))
+            except (ValueError, TypeError):
+                amt = 0.0
+            try:
+                tax = float(taxes.get(row_id, "0"))
+            except (ValueError, TypeError):
+                tax = 0.0
+
+            items.append(InvoiceItem(
+                name=_clean_item_name(name), unit_price=up, quantity=qty,
+                amount=amt, tax_amount=tax,
+                total_with_tax=amt + tax,
+            ))
 
         errors = []
         warnings = []

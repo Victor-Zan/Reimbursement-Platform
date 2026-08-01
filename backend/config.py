@@ -18,11 +18,11 @@ EXPECTED_TAX_ID = "12440300066312613F"
 
 # ---- OCR 引擎 ----
 # 可选值: "pdf" (默认, pdfplumber提取) | "baidu" | "mock"
-OCR_ENGINE = os.getenv("OCR_ENGINE", "pdf")
+OCR_ENGINE = os.getenv("OCR_ENGINE", "baidu")
 
 # 百度 OCR 配置（使用百度云时填写）
-BAIDU_OCR_API_KEY = os.getenv("BAIDU_OCR_API_KEY", "")
-BAIDU_OCR_SECRET_KEY = os.getenv("BAIDU_OCR_SECRET_KEY", "")
+BAIDU_OCR_API_KEY = os.getenv("BAIDU_OCR_API_KEY", "SHLCDXqMP9F1G30rSM1zm4Uw")
+BAIDU_OCR_SECRET_KEY = os.getenv("BAIDU_OCR_SECRET_KEY", "34pagxnRuzoGSdlR7ytB18XzUpMq9Yku")
 BAIDU_OCR_TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token"
 BAIDU_OCR_VAT_INVOICE_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/vat_invoice"
 
