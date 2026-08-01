@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import DetailTable from '../components/DetailTable';
+import StepIndicator from '../components/StepIndicator';
 import { ReimbursementFormData } from '../types';
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
   submitResult: { message: string; zip_filename: string } | null;
   setSubmitResult: (r: { message: string; zip_filename: string } | null) => void;
   onBack: () => void;
+  onSaveDraft: () => Promise<boolean>;
+  onHome: () => void;
   onReset: () => void;
 }
 
@@ -19,6 +22,8 @@ export default function ReviewSubmit({
   submitResult,
   setSubmitResult,
   onBack,
+  onSaveDraft,
+  onHome,
   onReset,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
@@ -93,8 +98,17 @@ export default function ReviewSubmit({
     }
   };
 
+  const [saving, setSaving] = useState(false);
+  const handleSave = async () => {
+    setSaving(true);
+    const ok = await onSaveDraft();
+    setSaving(false);
+    alert(ok ? '草稿已保存' : '保存失败，请重试');
+  };
+
   return (
     <>
+      <StepIndicator current={3} />
       {submitResult && (
         <div className="card" style={{ textAlign: 'center', padding: 48 }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
@@ -220,10 +234,18 @@ export default function ReviewSubmit({
           )}
 
           <div className="btn-actions">
-            <button className="btn btn-secondary" onClick={onBack} disabled={submitting}>
-              ← 上一步
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-secondary" onClick={onHome}>
+                ← 返回首页
+              </button>
+              <button className="btn btn-secondary" onClick={onBack} disabled={submitting}>
+                ← 上一步
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: 12 }}>
+              <button className="btn btn-secondary" onClick={handleSave} disabled={saving || submitting}>
+                {saving ? <><span className="spinner" /> 保存中...</> : '💾 保存草稿'}
+              </button>
               <button
                 className="btn btn-secondary"
                 onClick={handleDownloadExcel}

@@ -33,6 +33,13 @@ MIN_EVIDENCE_COUNT = 1
 ALLOWED_INVOICE_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/jpg"}
 ALLOWED_EVIDENCE_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 
+# ---- 数据库 (PostgreSQL) ----
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", "5435"))
+DB_USER = os.getenv("DB_USER", "reimbursement")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "改成你自己的密码")
+DB_NAME = os.getenv("DB_NAME", "reimbursement_db")
+
 # ---- 服务器 ----
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "7999"))

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import FileUploader from '../components/FileUploader';
+import StepIndicator from '../components/StepIndicator';
 import { OCRResult, OCRFileResult } from '../types';
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
   setOcrLoading: (v: boolean) => void;
   applyOCRResults: (results: OCRResult[]) => void;
   onNext: () => void;
+  onHome: () => void;
 }
 
 export default function UploadMaterials({
@@ -26,6 +28,7 @@ export default function UploadMaterials({
   setOcrLoading,
   applyOCRResults,
   onNext,
+  onHome,
 }: Props) {
   const [ocrError, setOcrError] = useState('');
 
@@ -72,6 +75,7 @@ export default function UploadMaterials({
 
   return (
     <>
+      <StepIndicator current={1} />
       {/* 发票上传 */}
       <div className="card">
         <h2 className="card-title">📎 上传发票（支持多张）</h2>
@@ -223,7 +227,9 @@ export default function UploadMaterials({
       </div>
 
       <div className="btn-actions">
-        <div />
+        <button className="btn btn-secondary" onClick={onHome}>
+          ← 返回首页
+        </button>
         <button
           className="btn btn-primary"
           disabled={!canNext}

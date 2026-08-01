@@ -4,17 +4,11 @@
 启动方式:
     cd backend
     python main.py
-
-API 路由:
-    POST /api/v1/ocr/invoice    — 上传发票，返回OCR识别结果（单张）
-    POST /api/v1/ocr/invoices   — 批量上传多张发票
-    POST /api/v1/validate       — 校验报销表数据完整性
-    POST /api/v1/generate       — 生成填好的报销表Excel
-    POST /api/v1/submit         — 打包提交所有材料
 """
 import json
 import os
 import uuid
+from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -29,6 +23,8 @@ from config import (
     HOST,
     PORT,
 )
+from database import init_db
+from draft_service import save_draft, list_drafts, get_draft, delete_draft
 from ocr import get_ocr_engine
 from ocr_field_mapping import OCRResult, InvoiceItem
 from validator import validate_form, build_form_data
@@ -293,6 +289,89 @@ async def submit_package(
 @app.get("/api/v1/health")
 async def health():
     return {"status": "ok", "engine": type(get_ocr_engine()).__name__}
+
+
+# ---- 草稿 API ----
+
+@app.post("/api/v1/drafts")
+async def api_save_draft(data: dict):
+    """保存草稿。"""
+    draft_id = data.get("draft_id")
+    did = save_draft(
+        activity_name=data.get("activity_name", ""),
+        org_name=data.get("org_name", ""),
+        current_step=data.get("current_step", 1),
+        form_data=data.get("form_data", {}),
+        ocr_results=data.get("ocr_results", []),
+        draft_id=draft_id,
+    )
+    return {"success": True, "draft_id": did}
+
+
+@app.get("/api/v1/drafts")
+async def api_list_drafts():
+    """列出所有草稿摘要。"""
+    drafts = list_drafts()
+    return {"success": True, "drafts": drafts}
+
+
+@app.get("/api/v1/drafts/{draft_id}")
+async def api_get_draft(draft_id: str):
+    """获取单条草稿完整数据。"""
+    draft = get_draft(draft_id)
+    if not draft:
+        raise HTTPException(404, "草稿不存在")
+    return {"success": True, "draft": draft}
+
+
+@app.delete("/api/v1/drafts/{draft_id}")
+async def api_delete_draft(draft_id: str):
+    """删除草稿。"""
+    ok = delete_draft(draft_id)
+    if not ok:
+        raise HTTPException(404, "草稿不存在")
+    return {"success": True}
+
+
+# ---- 历史提交 ----
+
+@app.get("/api/v1/submissions")
+async def api_list_submissions():
+    """列出 submissions 目录下的 ZIP 文件。"""
+    files = []
+    if os.path.isdir(SUBMISSIONS_DIR):
+        for fname in os.listdir(SUBMISSIONS_DIR):
+            if not fname.endswith(".zip"):
+                continue
+            fpath = os.path.join(SUBMISSIONS_DIR, fname)
+            stat = os.stat(fpath)
+            files.append({
+                "filename": fname,
+                "size": stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            })
+    files.sort(key=lambda f: f["modified"], reverse=True)
+    return {"success": True, "submissions": files}
+
+
+@app.get("/api/v1/submissions/download/{filename}")
+async def api_download_submission(filename: str):
+    """下载指定的 ZIP 文件。"""
+    fpath = os.path.join(SUBMISSIONS_DIR, filename)
+    if not os.path.isfile(fpath) or not filename.endswith(".zip"):
+        raise HTTPException(404, "文件不存在")
+    return FileResponse(
+        fpath,
+        media_type="application/zip",
+        filename=filename,
+    )
+
+
+# ---- 启动入口 ----
+
+@app.on_event("startup")
+async def startup():
+    init_db()
 
 
 if __name__ == "__main__":

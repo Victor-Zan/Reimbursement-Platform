@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import DetailTable from '../components/DetailTable';
+import StepIndicator from '../components/StepIndicator';
 import {
   ReimbursementFormData,
   InvoiceSection,
@@ -12,8 +13,11 @@ interface Props {
   updateForm: (patch: Partial<ReimbursementFormData>) => void;
   updateInvoice: (invIndex: number, patch: Partial<InvoiceSection>) => void;
   updateInvoiceItems: (invIndex: number, items: DetailRow[]) => void;
+  ocrResults?: any;
   onBack: () => void;
   onNext: () => void;
+  onSaveDraft: () => Promise<boolean>;
+  onHome: () => void;
 }
 
 export default function FillForm({
@@ -23,6 +27,8 @@ export default function FillForm({
   updateInvoiceItems,
   onBack,
   onNext,
+  onSaveDraft,
+  onHome,
 }: Props) {
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [validating, setValidating] = useState(false);
@@ -52,8 +58,17 @@ export default function FillForm({
     updateForm({ [field]: value });
   };
 
+  const [saving, setSaving] = useState(false);
+  const handleSave = async () => {
+    setSaving(true);
+    const ok = await onSaveDraft();
+    setSaving(false);
+    alert(ok ? '草稿已保存' : '保存失败，请重试');
+  };
+
   return (
     <>
+      <StepIndicator current={2} />
       {/* 活动信息 */}
       <div className="card">
         <h2 className="card-title">活动信息</h2>
@@ -231,20 +246,30 @@ export default function FillForm({
       )}
 
       <div className="btn-actions">
-        <button className="btn btn-secondary" onClick={onBack}>
-          ← 上一步
-        </button>
-        <button
-          className="btn btn-primary"
-          onClick={handleValidate}
-          disabled={validating}
-        >
-          {validating ? (
-            <><span className="spinner" /> 校验中...</>
-          ) : (
-            '下一步：确认提交 →'
-          )}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={onHome}>
+            ← 返回首页
+          </button>
+          <button className="btn btn-secondary" onClick={onBack}>
+            ← 上一步
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={handleSave} disabled={saving}>
+            {saving ? <><span className="spinner" /> 保存中...</> : '💾 保存草稿'}
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={handleValidate}
+            disabled={validating}
+          >
+            {validating ? (
+              <><span className="spinner" /> 校验中...</>
+            ) : (
+              '下一步：确认提交 →'
+            )}
+          </button>
+        </div>
       </div>
     </>
   );
