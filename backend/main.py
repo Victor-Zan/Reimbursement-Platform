@@ -219,6 +219,8 @@ async def submit_package(
     alipay_account: str = Form(""),
     invoice_files: list[UploadFile] = File(default_factory=list),
     evidence_files: list[UploadFile] = File(default_factory=list),
+    existing_invoice_paths: str = Form("[]"),
+    existing_evidence_paths: str = Form("[]"),
 ):
     """
     提交完整报销申请包（支持多发票）。
@@ -245,20 +247,40 @@ async def submit_package(
             "errors": validation.errors,
         })
 
-    # 保存上传文件
-    saved_invoice_paths = []
+    # 保存上传文件（已有路径 + 新上传）
+    saved_invoice_paths = json.loads(existing_invoice_paths) if existing_invoice_paths else []
     for f in invoice_files:
         if f.filename:
             content = await f.read()
-            fpath = _save_upload(content, f.filename, "invoices")
-            saved_invoice_paths.append(fpath)
+            saved_invoice_paths.append(_save_upload(content, f.filename, "invoices"))
 
-    saved_evidence_paths = []
+    saved_evidence_paths = json.loads(existing_evidence_paths) if existing_evidence_paths else []
     for f in evidence_files:
         if f.filename:
             content = await f.read()
-            fpath = _save_upload(content, f.filename, "evidence")
-            saved_evidence_paths.append(fpath)
+            saved_evidence_paths.append(_save_upload(content, f.filename, "evidence"))
+
+    # 对每张发票拼接信息条
+    from invoice_annotator import annotate_invoice
+    annotated_paths = []
+    for idx, inv_path in enumerate(saved_invoice_paths):
+        try:
+            inv_data = invoices_data[idx] if idx < len(invoices_data) else {}
+            inv_items = inv_data.get("items", [])
+            item_names = "、".join(it.get("name", "") for it in inv_items if it.get("name"))
+            inv_amount = inv_data.get("reimbursement_amount", 0)
+            annotated = annotate_invoice(
+                inv_path,
+                org_name or "",
+                activity_name or "",
+                item_names or "未识别",
+                f"¥{inv_amount:.2f}",
+                SUBMISSIONS_DIR,
+            )
+            annotated_paths.append(annotated)
+        except Exception as e:
+            print(f"[标注失败] {inv_path}: {e}")
+            annotated_paths.append(inv_path)
 
     # 生成Excel
     try:
@@ -266,11 +288,11 @@ async def submit_package(
     except Exception as e:
         raise HTTPException(500, f"Excel生成失败: {str(e)}")
 
-    # 打包
+    # 打包（使用标注后的发票）
     try:
         zip_path = create_submission_package(
             excel_path=excel_path,
-            invoice_files=saved_invoice_paths,
+            invoice_files=annotated_paths,
             evidence_files=saved_evidence_paths,
             output_dir=SUBMISSIONS_DIR,
             activity_name=activity_name,
@@ -278,7 +300,7 @@ async def submit_package(
     except Exception as e:
         raise HTTPException(500, f"打包失败: {str(e)}")
 
-    # 保存完整表单数据到数据库（用于打回后重新编辑）
+    # 保存完整表单数据 + 文件路径到数据库（用于打回后重新编辑）
     from database import get_connection as _get_conn
     full_form = {
         "activity_name": activity_name, "org_name": org_name,
@@ -292,7 +314,8 @@ async def submit_package(
         with _conn.cursor() as _cur:
             _cur.execute(
                 "INSERT INTO submissions_data (zip_filename, user_email, form_data) VALUES (%s, %s, %s)",
-                (os.path.basename(zip_path), "", json.dumps(full_form, ensure_ascii=False)),
+                (os.path.basename(zip_path), "",
+                 json.dumps({"form": full_form, "invoice_paths": saved_invoice_paths, "evidence_paths": saved_evidence_paths}, ensure_ascii=False)),
             )
         _conn.commit()
     finally:
@@ -490,7 +513,7 @@ async def api_delete_draft(draft_id: str):
 
 @app.get("/api/v1/submission-data/{filename}")
 async def api_get_submission_data(filename: str):
-    """获取某次提交的原始表单数据和文件路径。"""
+    """获取某次提交的原始表单数据 + 文件路径。"""
     from database import get_connection as _get_conn
     _conn = _get_conn()
     try:
@@ -503,12 +526,46 @@ async def api_get_submission_data(filename: str):
             if not row:
                 raise HTTPException(404, "未找到提交数据")
             data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+            result: dict = {"success": True}
             if "form" in data:
-                return {"success": True, "form_data": data["form"]}
+                result["form_data"] = data["form"]
+                # 将服务端文件路径转为可访问的 URL
+                ipaths = data.get("invoice_paths", [])
+                epaths = data.get("evidence_paths", [])
+                result["invoice_urls"] = []
+                result["invoice_paths"] = []
+                result["evidence_urls"] = []
+                result["evidence_paths"] = []
+                for p in ipaths:
+                    if os.path.isfile(p):
+                        result["invoice_paths"].append(p)
+                        rel = os.path.relpath(p, UPLOADS_DIR).replace("\\", "/")
+                        result["invoice_urls"].append(f"/api/v1/uploads/{rel}")
+                for p in epaths:
+                    if os.path.isfile(p):
+                        result["evidence_paths"].append(p)
+                        rel = os.path.relpath(p, UPLOADS_DIR).replace("\\", "/")
+                        result["evidence_urls"].append(f"/api/v1/uploads/{rel}")
             else:
-                return {"success": True, "form_data": data}
+                result["form_data"] = data
+                result["invoice_urls"] = []
+                result["invoice_paths"] = []
+                result["evidence_urls"] = []
+                result["evidence_paths"] = []
+            return result
     finally:
         _conn.close()
+
+
+@app.get("/api/v1/uploads/{subdir}/{filename}")
+async def api_serve_upload(subdir: str, filename: str):
+    """提供已上传文件的访问。"""
+    fpath = os.path.join(UPLOADS_DIR, subdir, filename)
+    if not os.path.isfile(fpath):
+        raise HTTPException(404, "文件不存在")
+    import mimetypes
+    mime, _ = mimetypes.guess_type(filename)
+    return FileResponse(fpath, media_type=mime or "application/octet-stream")
 
 
 # ---- 历史提交 ----

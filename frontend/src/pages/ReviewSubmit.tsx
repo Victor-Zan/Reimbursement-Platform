@@ -7,6 +7,10 @@ interface Props {
   formData: ReimbursementFormData;
   invoiceFiles: File[];
   evidenceFiles: File[];
+  reEditInvoicePaths?: string[];
+  reEditEvidencePaths?: string[];
+  reEditInvoiceUrls?: string[];
+  reEditEvidenceUrls?: string[];
   submitResult: { message: string; zip_filename: string } | null;
   setSubmitResult: (r: { message: string; zip_filename: string } | null) => void;
   onBack: () => void;
@@ -19,6 +23,10 @@ export default function ReviewSubmit({
   formData,
   invoiceFiles,
   evidenceFiles,
+  reEditInvoicePaths = [],
+  reEditEvidencePaths = [],
+  reEditInvoiceUrls = [],
+  reEditEvidenceUrls = [],
   submitResult,
   setSubmitResult,
   onBack,
@@ -70,6 +78,8 @@ export default function ReviewSubmit({
     form.append('activity_leader_opinion', formData.activity_leader_opinion);
     form.append('alipay_account', formData.alipay_account);
 
+    form.append('existing_invoice_paths', JSON.stringify(reEditInvoicePaths));
+    form.append('existing_evidence_paths', JSON.stringify(reEditEvidencePaths));
     invoiceFiles.forEach(f => form.append('invoice_files', f));
     evidenceFiles.forEach(f => form.append('evidence_files', f));
 
@@ -206,22 +216,20 @@ export default function ReviewSubmit({
               <h3>上传材料</h3>
               <div className="preview-grid">
                 <span className="label">发票文件</span>
-                <span className="value">{invoiceFiles.length} 张</span>
+                <span className="value">{reEditInvoiceUrls.length + invoiceFiles.length} 张</span>
                 <span className="label">活动凭证</span>
-                <span className="value">{evidenceFiles.length} 张</span>
+                <span className="value">{reEditEvidenceUrls.length + evidenceFiles.length} 张</span>
               </div>
-              {invoiceFiles.length > 0 && (
+              {(reEditInvoiceUrls.length + invoiceFiles.length > 0) && (
                 <div className="file-list" style={{ marginTop: 8 }}>
-                  {invoiceFiles.map((f, i) => (
-                    <div key={i} className="file-chip">📎 {f.name}</div>
-                  ))}
+                  {reEditInvoiceUrls.map((_, i) => (<div key={`ei_${i}`} className="file-chip">📎 发票_{i + 1} (原有)</div>))}
+                  {invoiceFiles.map((f, i) => (<div key={i} className="file-chip">📎 {f.name}</div>))}
                 </div>
               )}
-              {evidenceFiles.length > 0 && (
+              {(reEditEvidenceUrls.length + evidenceFiles.length > 0) && (
                 <div className="file-list" style={{ marginTop: 8 }}>
-                  {evidenceFiles.map((f, i) => (
-                    <div key={i} className="file-chip">📷 {f.name}</div>
-                  ))}
+                  {reEditEvidenceUrls.map((_, i) => (<div key={`ee_${i}`} className="file-chip">📷 凭证_{i + 1} (原有)</div>))}
+                  {evidenceFiles.map((f, i) => (<div key={i} className="file-chip">📷 {f.name}</div>))}
                 </div>
               )}
             </div>

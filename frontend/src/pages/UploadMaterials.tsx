@@ -15,6 +15,9 @@ interface Props {
   applyOCRResults: (results: OCRResult[]) => void;
   onNext: () => void;
   onHome: () => void;
+  reEditInvoiceUrls?: string[];
+  reEditEvidenceUrls?: string[];
+  onClearReEdit?: () => void;
 }
 
 export default function UploadMaterials({
@@ -29,7 +32,11 @@ export default function UploadMaterials({
   applyOCRResults,
   onNext,
   onHome,
+  reEditInvoiceUrls = [],
+  reEditEvidenceUrls = [],
+  onClearReEdit,
 }: Props) {
+  const isReEdit = reEditInvoiceUrls.length > 0 || reEditEvidenceUrls.length > 0;
   const [ocrError, setOcrError] = useState('');
 
   const handleBatchOCR = async () => {
@@ -54,16 +61,35 @@ export default function UploadMaterials({
     finally { setOcrLoading(false); }
   };
 
-  const canNext = ocrResults.length > 0 && evidenceFiles.length >= 1;
+  const totalEvidence = evidenceFiles.length + reEditEvidenceUrls.length;
+  const canNext = ocrResults.length > 0 && totalEvidence >= 1;
 
   return (
     <>
       <StepIndicator current={1} />
+      {isReEdit && (
+        <div className="card" style={{ border: '2px solid var(--primary)', background: 'var(--primary-light)' }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--primary)' }}>📝 正在重新编辑被打回的报销申请</span>
+          <span style={{ fontSize: 13, color: 'var(--gray-600)', marginLeft: 12 }}>原有文件已保留，可替换或追加。仅替换凭证不影响已填写内容。</span>
+        </div>
+      )}
       <div className="card">
         <h2 className="card-title">📎 上传发票（支持多张）</h2>
         <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 12 }}>一次活动可上传多张发票，所有发票合并到同一张报销表中</p>
-        <FileUploader file={null} setFile={() => {}} files={invoiceFiles} setFiles={setInvoiceFiles}
-          label="点击或拖拽上传发票（支持 PDF / 图片，可多选）" accept=".pdf,.png,.jpg,.jpeg" hint="仅支持增值税普通发票，可一次选择多个文件" multiple />
+        {reEditInvoiceUrls.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <span className="form-label">原有发票文件：</span>
+            <div className="file-list">
+              {reEditInvoiceUrls.map((url, i) => (
+                <div key={i} className="file-chip">
+                  <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', textDecoration: 'none' }}>📎 发票_{i + 1}</a>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <FileUploader file={null} setFile={() => {}} files={invoiceFiles} setFiles={(files) => { setInvoiceFiles(files); if (files.length > 0 && isReEdit) { setOcrResults([]); onClearReEdit?.(); } }}
+          label={isReEdit ? "替换或追加发票（可选）" : "点击或拖拽上传发票（支持 PDF / 图片，可多选）"} accept=".pdf,.png,.jpg,.jpeg" hint="仅支持增值税普通发票，可一次选择多个文件" multiple />
         {invoiceFiles.length > 0 && ocrResults.length === 0 && (
           <button className="btn btn-primary" onClick={handleBatchOCR} disabled={ocrLoading} style={{ marginTop: 16 }}>
             {ocrLoading ? <><span className="spinner" /> 正在识别 {invoiceFiles.length} 张发票...</> : `🔍 开始识别 ${invoiceFiles.length} 张发票`}
@@ -109,8 +135,18 @@ export default function UploadMaterials({
       <div className="card">
         <h2 className="card-title">📷 上传活动凭证</h2>
         <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 12 }}>请上传至少 1 张活动现场照片</p>
+        {reEditEvidenceUrls.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <span className="form-label">原有活动凭证：</span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+              {reEditEvidenceUrls.map((url, i) => (
+                <img key={i} src={url} alt={`凭证_${i + 1}`} style={{ width: 120, height: 90, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--gray-200)' }} />
+              ))}
+            </div>
+          </div>
+        )}
         <FileUploader file={null} setFile={() => {}} files={evidenceFiles} setFiles={setEvidenceFiles}
-          label="点击或拖拽上传活动照片（至少 1 张）" accept=".png,.jpg,.jpeg" hint="必须是活动现场照片" multiple />
+          label={isReEdit ? "替换或追加活动照片（可选）" : "点击或拖拽上传活动照片（至少 1 张）"} accept=".png,.jpg,.jpeg" hint="必须是活动现场照片" multiple />
       </div>
       <div className="btn-actions">
         <button className="btn btn-secondary" onClick={onHome}>← 返回首页</button>

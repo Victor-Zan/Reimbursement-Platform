@@ -56,10 +56,16 @@ export default function App() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ message: string; zip_filename: string } | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
+  const [reEditInvoiceUrls, setReEditInvoiceUrls] = useState<string[]>([]);
+  const [reEditEvidenceUrls, setReEditEvidenceUrls] = useState<string[]>([]);
+  const [reEditInvoicePaths, setReEditInvoicePaths] = useState<string[]>([]);
+  const [reEditEvidencePaths, setReEditEvidencePaths] = useState<string[]>([]);
 
   const resetAll = useCallback(() => {
     setFormData(emptyForm); setOcrResults([]); setInvoiceFiles([]);
     setEvidenceFiles([]); setSubmitResult(null); setDraftId(null);
+    setReEditInvoiceUrls([]); setReEditEvidenceUrls([]);
+    setReEditInvoicePaths([]); setReEditEvidencePaths([]);
   }, []);
 
   const handleLogin = useCallback((token: string, user: any) => {
@@ -117,7 +123,11 @@ export default function App() {
 
   const updateForm = (patch: Partial<ReimbursementFormData>) => setFormData(p => ({ ...p, ...patch }));
   const updateInvoice = (invIndex: number, patch: Partial<InvoiceSection>) => {
-    setFormData(p => { const invoices = [...p.invoices]; invoices[invIndex] = { ...invoices[invIndex], ...patch }; return { ...p, invoices }; });
+    setFormData(p => {
+      const invoices = [...p.invoices]; invoices[invIndex] = { ...invoices[invIndex], ...patch };
+      let total = 0; for (const inv of invoices) total += inv.reimbursement_amount || 0;
+      return { ...p, invoices, actual_total: total };
+    });
   };
   const updateInvoiceItems = (invIndex: number, items: DetailRow[]) => {
     setFormData(p => {
@@ -138,7 +148,8 @@ export default function App() {
     setFormData(p => ({ ...p, invoices, actual_total: total }));
   }, []);
 
-  const wizardProps = { invoiceFiles, setInvoiceFiles, evidenceFiles, setEvidenceFiles, ocrResults, setOcrResults, ocrLoading, setOcrLoading, applyOCRResults };
+  const clearReEdit = () => { setReEditInvoiceUrls([]); setReEditEvidenceUrls([]); setReEditInvoicePaths([]); setReEditEvidencePaths([]); };
+  const wizardProps = { invoiceFiles, setInvoiceFiles, evidenceFiles, setEvidenceFiles, ocrResults, setOcrResults, ocrLoading, setOcrLoading, applyOCRResults, reEditInvoiceUrls, reEditEvidenceUrls, onClearReEdit: clearReEdit };
 
   return (
     <Routes>
@@ -149,11 +160,15 @@ export default function App() {
 
       {/* Member routes */}
       <Route path="/member" element={auth ? <HomePage onEnterVat={() => { resetAll(); navigate('/member/upload'); }} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onApplyReviewer={() => navigate('/member/apply')}
-        onReEdit={(data: any) => { setFormData(data.form_data || data); setSubmitResult(null); navigate('/member/fill'); }} />
+        onReEdit={(data: any) => {
+          setFormData(data.form_data || data);
+          setSubmitResult(null);
+          navigate('/member/fill');
+        }} />
         : <Navigate to="/login" />} />
       <Route path="/member/upload" element={<UploadMaterials {...wizardProps} onNext={() => navigate('/member/fill')} onHome={promptSaveBeforeHome} />} />
       <Route path="/member/fill" element={<FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} />} />
-      <Route path="/member/review" element={<ReviewSubmit formData={formData} invoiceFiles={invoiceFiles} evidenceFiles={evidenceFiles} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} />} />
+      <Route path="/member/review" element={<ReviewSubmit formData={formData} invoiceFiles={invoiceFiles} evidenceFiles={evidenceFiles} reEditInvoicePaths={reEditInvoicePaths} reEditEvidencePaths={reEditEvidencePaths} reEditInvoiceUrls={reEditInvoiceUrls} reEditEvidenceUrls={reEditEvidenceUrls} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} />} />
 
       {/* Reviewer routes */}
       <Route path="/reviewer" element={auth?.user?.is_reviewer ? <ReviewerDashboard user={auth.user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
