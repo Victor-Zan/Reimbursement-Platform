@@ -37,7 +37,46 @@ def init_db():
                     updated_at    TIMESTAMP DEFAULT NOW()
                 );
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id            SERIAL PRIMARY KEY,
+                    email         VARCHAR(255) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    is_reviewer   BOOLEAN DEFAULT FALSE,
+                    created_at    TIMESTAMP DEFAULT NOW()
+                );
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS review_annotations (
+                    id               SERIAL PRIMARY KEY,
+                    submission_zip   VARCHAR(500) NOT NULL,
+                    status           VARCHAR(20) DEFAULT 'pending',
+                    reviewer_email   VARCHAR(255) DEFAULT '',
+                    invoice_comment  TEXT DEFAULT '',
+                    evidence_comment TEXT DEFAULT '',
+                    form_comment     TEXT DEFAULT '',
+                    created_at       TIMESTAMP DEFAULT NOW()
+                );
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS reviewer_applications (
+                    id         SERIAL PRIMARY KEY,
+                    email      VARCHAR(255) NOT NULL,
+                    reason     TEXT DEFAULT '',
+                    status     VARCHAR(20) DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT NOW()
+                );
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS submissions_data (
+                    id           SERIAL PRIMARY KEY,
+                    zip_filename VARCHAR(500) NOT NULL,
+                    user_email   VARCHAR(255) DEFAULT '',
+                    form_data    JSONB DEFAULT '{}',
+                    created_at   TIMESTAMP DEFAULT NOW()
+                );
+            """)
         conn.commit()
-        print("[DB] drafts 表已就绪")
+        print("[DB] 所有表已就绪")
     finally:
         conn.close()

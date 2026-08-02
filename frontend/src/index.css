@@ -671,6 +671,53 @@ td input.error {
   color: var(--gray-400);
 }
 
+/* ---- Auth Pages ---- */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #ede9fe 0%, #faf5ff 50%, #f5f5f5 100%);
+}
+
+.auth-card {
+  background: white;
+  border-radius: 16px;
+  padding: 40px;
+  width: 400px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+.auth-card h1 {
+  font-size: 24px;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.auth-subtitle {
+  text-align: center;
+  color: var(--gray-500);
+  font-size: 13px;
+  margin-bottom: 24px;
+}
+
+.auth-footer {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--gray-500);
+}
+
+.auth-link {
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 700px) {
   .home-grid {

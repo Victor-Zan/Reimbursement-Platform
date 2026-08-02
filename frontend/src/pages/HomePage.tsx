@@ -4,6 +4,9 @@ interface Props {
   onEnterVat: () => void;
   onOpenDrafts: () => void;
   onOpenHistory: () => void;
+  user?: any;
+  onApplyReviewer?: () => void;
+  onReEdit?: (data: any) => void;
 }
 
 interface DraftSummary {
@@ -20,7 +23,7 @@ interface SubmissionFile {
   modified: string;
 }
 
-export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory }: Props) {
+export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user, onApplyReviewer, onReEdit }: Props) {
   const [draftCount, setDraftCount] = useState(0);
   const [showDrafts, setShowDrafts] = useState(false);
   const [drafts, setDrafts] = useState<DraftSummary[]>([]);
@@ -69,6 +72,47 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory }: Pr
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbacks, setFeedbacks] = useState<any[]>([]);
+  const [showApply, setShowApply] = useState(false);
+  const [applyEmail, setApplyEmail] = useState(user?.email || '');
+  const [applyReason, setApplyReason] = useState('');
+
+  const handleOpenFeedback = async () => {
+    setLoading(true);
+    try {
+      // List submissions and check review status
+      const r = await fetch('/api/v1/submissions');
+      const j = await r.json();
+      if (j.success) {
+        const items = [];
+        for (const s of j.submissions) {
+          try {
+            const rr = await fetch(`/api/v1/review/annotations/${encodeURIComponent(s.filename)}`);
+            const rj = await rr.json();
+            if (rj.success && rj.review.status !== 'pending') {
+              items.push({ ...s, ...rj.review });
+            }
+          } catch {}
+        }
+        setFeedbacks(items);
+      }
+    } catch {}
+    setLoading(false);
+    setShowFeedback(true);
+  };
+
+  const handleApply = async () => {
+    if (!applyEmail || !applyReason) { alert('请填写邮箱和申请原因'); return; }
+    await fetch('/api/v1/reviewer/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: applyEmail, reason: applyReason }),
+    });
+    alert('申请已提交');
+    setShowApply(false);
+  };
+
   const formatTime = (iso: string) => {
     if (!iso) return '';
     return iso.replace('T', ' ').slice(0, 19);
@@ -80,6 +124,7 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory }: Pr
       <div className="home-header">
         <h1>报销自动化平台</h1>
         <p>香港中文大学（深圳）学生活动经费报销</p>
+        {user && <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>{user.email}</p>}
       </div>
 
       {/* 主体：左大右三小 */}
@@ -111,6 +156,18 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory }: Pr
             <span className="home-card-icon">📂</span>
             <span className="home-card-label">查看历史提交</span>
           </div>
+
+          <div className="home-card home-card-small" onClick={handleOpenFeedback}>
+            <span className="home-card-icon">📬</span>
+            <span className="home-card-label">审核反馈</span>
+          </div>
+
+          {onApplyReviewer && (
+            <div className="home-card home-card-small" onClick={() => setShowApply(true)}>
+              <span className="home-card-icon">🔑</span>
+              <span className="home-card-label">申请成为审核员</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -225,6 +282,75 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory }: Pr
             >
               关闭
             </button>
+          </div>
+        </div>
+      )}
+      {/* 审核反馈弹窗 */}
+      {showFeedback && (
+        <div className="modal-overlay" onClick={() => setShowFeedback(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>📬 审核反馈</h2>
+            {loading ? <p style={{ textAlign: 'center', padding: 24 }}><span className="spinner" /> 加载中...</p>
+             : feedbacks.length === 0 ? <p style={{ textAlign: 'center', padding: 24, color: 'var(--gray-500)' }}>暂无审核反馈</p>
+             : feedbacks.map((f, i) => (
+              <div key={i} className="submission-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <strong>📦 {f.filename}</strong>
+                  <span className={`badge ${f.status === 'approved' ? 'badge-ok' : 'badge-error'}`}>
+                    {f.status === 'approved' ? '已通过' : '已打回'}
+                  </span>
+                </div>
+                {f.status === 'rejected' && (
+                  <>
+                    <div style={{ fontSize: 13, color: 'var(--gray-600)' }}>
+                      {f.invoice_comment && <p>📎 发票：{f.invoice_comment}</p>}
+                      {f.evidence_comment && <p>📷 凭证：{f.evidence_comment}</p>}
+                      {f.form_comment && <p>📋 报销表：{f.form_comment}</p>}
+                    </div>
+                    {onReEdit && (
+                      <button className="btn btn-primary" style={{ padding: '4px 14px', fontSize: 13, marginTop: 8 }}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`);
+                            const j = await r.json();
+                            if (j.success && j.form_data) {
+                              setShowFeedback(false);
+                              onReEdit(j.form_data);
+                            } else {
+                              alert('未找到该提交的原始数据（可能是在此功能上线前提交的）');
+                            }
+                          } catch { alert('加载失败，请检查后端服务'); }
+                        }}>
+                        ✏️ 重新编辑
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
+            <button className="btn btn-secondary" onClick={() => setShowFeedback(false)} style={{ marginTop: 16, width: '100%' }}>关闭</button>
+          </div>
+        </div>
+      )}
+
+      {/* 申请审核员弹窗 */}
+      {showApply && (
+        <div className="modal-overlay" onClick={() => setShowApply(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>🔑 申请成为审核员</h2>
+            <div className="form-group">
+              <label className="form-label">邮箱</label>
+              <input className="form-input" value={applyEmail} onChange={e => setApplyEmail(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">申请原因</label>
+              <textarea className="form-input" rows={3} value={applyReason} onChange={e => setApplyReason(e.target.value)} placeholder="请简述申请原因..." />
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+              <button className="btn btn-primary" onClick={handleApply}>提交申请</button>
+              <button className="btn btn-secondary" onClick={() => setShowApply(false)}>取消</button>
+            </div>
           </div>
         </div>
       )}

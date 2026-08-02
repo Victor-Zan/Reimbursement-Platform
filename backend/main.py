@@ -278,6 +278,26 @@ async def submit_package(
     except Exception as e:
         raise HTTPException(500, f"打包失败: {str(e)}")
 
+    # 保存完整表单数据到数据库（用于打回后重新编辑）
+    from database import get_connection as _get_conn
+    full_form = {
+        "activity_name": activity_name, "org_name": org_name,
+        "activity_end_date": activity_end_date, "reimbursement_date": reimbursement_date,
+        "invoices": invoices_data, "actual_total": actual_total,
+        "finance_officer": finance_officer, "activity_leader_opinion": activity_leader_opinion,
+        "alipay_account": alipay_account,
+    }
+    _conn = _get_conn()
+    try:
+        with _conn.cursor() as _cur:
+            _cur.execute(
+                "INSERT INTO submissions_data (zip_filename, user_email, form_data) VALUES (%s, %s, %s)",
+                (os.path.basename(zip_path), "", json.dumps(full_form, ensure_ascii=False)),
+            )
+        _conn.commit()
+    finally:
+        _conn.close()
+
     return {
         "success": True,
         "message": "报销申请已成功提交",
@@ -289,6 +309,139 @@ async def submit_package(
 @app.get("/api/v1/health")
 async def health():
     return {"status": "ok", "engine": type(get_ocr_engine()).__name__}
+
+
+# ---- 认证 API ----
+
+@app.post("/api/v1/auth/register")
+async def api_register(data: dict):
+    """注册新用户。"""
+    from user_service import register
+    result = register(data.get("email", ""), data.get("password", ""))
+    if not result["success"]:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+@app.post("/api/v1/auth/login")
+async def api_login(data: dict):
+    """登录。"""
+    from user_service import login
+    result = login(data.get("email", ""), data.get("password", ""))
+    if not result["success"]:
+        raise HTTPException(401, result["error"])
+    return result
+
+
+@app.get("/api/v1/auth/me")
+async def api_me(token: str = ""):
+    """获取当前用户信息。"""
+    from auth import decode_token
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(401, "无效的 token")
+    from user_service import get_user_by_id
+    user = get_user_by_id(payload["user_id"])
+    if not user:
+        raise HTTPException(404, "用户不存在")
+    return {"success": True, "user": user}
+
+
+# ---- 审核 API ----
+
+@app.get("/api/v1/review/submissions")
+async def api_review_list():
+    """审核员查看所有提交的 ZIP + 审核状态。"""
+    from review_service import list_all_reviews, get_review_status
+    import os as _os
+    from config import SUBMISSIONS_DIR
+    from datetime import datetime as _dt
+
+    # 获取所有 ZIP 文件
+    files = []
+    if _os.path.isdir(SUBMISSIONS_DIR):
+        for fname in _os.listdir(SUBMISSIONS_DIR):
+            if not fname.endswith(".zip"):
+                continue
+            fpath = _os.path.join(SUBMISSIONS_DIR, fname)
+            stat = _os.stat(fpath)
+            files.append({
+                "filename": fname,
+                "size": stat.st_size,
+                "modified": _dt.fromtimestamp(stat.st_mtime).isoformat(),
+            })
+
+    # 关联审核状态
+    reviews = {r["submission_zip"]: r for r in list_all_reviews()}
+    for f in files:
+        review = reviews.get(f["filename"], {})
+        f["status"] = review.get("status", "pending")
+        f["reviewer_email"] = review.get("reviewer_email", "")
+        f["reviewed_at"] = review.get("created_at", "")
+
+    files.sort(key=lambda f: f["modified"], reverse=True)
+    return {"success": True, "submissions": files}
+
+
+@app.get("/api/v1/review/annotations/{filename}")
+async def api_get_annotations(filename: str):
+    """获取某个 ZIP 的审核批注详情。"""
+    from review_service import get_review_status
+    return {"success": True, "review": get_review_status(filename)}
+
+
+@app.post("/api/v1/review/approve")
+async def api_approve(data: dict):
+    """审核通过。"""
+    from review_service import approve_submission
+    result = approve_submission(
+        data.get("submission_zip", ""),
+        data.get("reviewer_email", ""),
+    )
+    return result
+
+
+@app.post("/api/v1/review/reject")
+async def api_reject(data: dict):
+    """打回并批注。"""
+    from review_service import reject_submission
+    result = reject_submission(
+        data.get("submission_zip", ""),
+        data.get("reviewer_email", ""),
+        data.get("invoice_comment", ""),
+        data.get("evidence_comment", ""),
+        data.get("form_comment", ""),
+    )
+    return result
+
+
+# ---- 审核员申请 API ----
+
+@app.post("/api/v1/reviewer/apply")
+async def api_apply_reviewer(data: dict):
+    """提交审核员申请。"""
+    from application_service import submit_application
+    result = submit_application(data.get("email", ""), data.get("reason", ""))
+    if not result["success"]:
+        raise HTTPException(400, "申请失败")
+    return result
+
+
+@app.get("/api/v1/reviewer/applications")
+async def api_list_applications():
+    """列出所有审核员申请。"""
+    from application_service import list_applications
+    return {"success": True, "applications": list_applications()}
+
+
+@app.post("/api/v1/reviewer/applications/{app_id}/approve")
+async def api_approve_application(app_id: int):
+    """批准审核员申请。"""
+    from application_service import approve_application
+    result = approve_application(app_id)
+    if not result.get("success"):
+        raise HTTPException(400, result.get("error", "操作失败"))
+    return result
 
 
 # ---- 草稿 API ----
@@ -333,6 +486,31 @@ async def api_delete_draft(draft_id: str):
     return {"success": True}
 
 
+# ---- 提交数据查询（用于打回后重新编辑）----
+
+@app.get("/api/v1/submission-data/{filename}")
+async def api_get_submission_data(filename: str):
+    """获取某次提交的原始表单数据和文件路径。"""
+    from database import get_connection as _get_conn
+    _conn = _get_conn()
+    try:
+        with _conn.cursor() as _cur:
+            _cur.execute(
+                "SELECT form_data FROM submissions_data WHERE zip_filename = %s ORDER BY created_at DESC LIMIT 1",
+                (filename,),
+            )
+            row = _cur.fetchone()
+            if not row:
+                raise HTTPException(404, "未找到提交数据")
+            data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+            if "form" in data:
+                return {"success": True, "form_data": data["form"]}
+            else:
+                return {"success": True, "form_data": data}
+    finally:
+        _conn.close()
+
+
 # ---- 历史提交 ----
 
 @app.get("/api/v1/submissions")
@@ -365,6 +543,58 @@ async def api_download_submission(filename: str):
         media_type="application/zip",
         filename=filename,
     )
+
+
+@app.get("/api/v1/submissions/preview/{filename}")
+async def api_preview_submission(filename: str):
+    """
+    解压 ZIP 并返回文件内容供审核员在线预览。
+    返回发票图片、活动凭证图片的 base64，以及报销表 Excel 的下载链接。
+    """
+    import zipfile, base64 as b64
+
+    fpath = os.path.join(SUBMISSIONS_DIR, filename)
+    if not os.path.isfile(fpath) or not filename.endswith(".zip"):
+        raise HTTPException(404, "文件不存在")
+
+    invoices = []
+    evidences = []
+    form = None
+
+    with zipfile.ZipFile(fpath, "r") as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            data = zf.read(info.filename)
+            name = os.path.basename(info.filename)
+            ext = os.path.splitext(name)[1].lower()
+
+            if "发票" in info.filename:
+                mime = "image/png" if ext in (".png",) else "image/jpeg"
+                if ext == ".pdf":
+                    mime = "application/pdf"
+                invoices.append({
+                    "name": name,
+                    "data_url": f"data:{mime};base64,{b64.b64encode(data).decode()}",
+                })
+            elif "凭证" in info.filename:
+                mime = "image/png" if ext in (".png",) else "image/jpeg"
+                evidences.append({
+                    "name": name,
+                    "data_url": f"data:{mime};base64,{b64.b64encode(data).decode()}",
+                })
+            elif "报销表" in info.filename:
+                form = {
+                    "name": name,
+                    "download_url": f"/api/v1/submissions/download/{filename}",
+                }
+
+    return {
+        "success": True,
+        "invoices": invoices,
+        "evidences": evidences,
+        "form": form,
+    }
 
 
 # ---- 启动入口 ----
