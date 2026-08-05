@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import HomePage from './pages/HomePage';
+import RoleSelectPage from './pages/RoleSelectPage';
 import ReviewerDashboard from './pages/ReviewerDashboard';
 import ReviewMaterials from './pages/ReviewMaterials';
 import ManagePermissions from './pages/ManagePermissions';
@@ -73,9 +74,7 @@ export default function App() {
     setAuth({ token, user });
 
     if (user.can_choose_role) {
-      const role = window.confirm('检测到你同时拥有社员和审核员身份。\n\n[确定] = 以审核员身份进入\n[取消] = 以社员身份进入');
-      if (role) navigate('/reviewer');
-      else navigate('/member');
+      navigate('/select-role');
     } else if (user.is_reviewer) {
       navigate('/reviewer');
     } else {
@@ -93,13 +92,13 @@ export default function App() {
   const saveDraft = useCallback(async () => {
     try {
       const step = location.pathname.includes('fill') ? 2 : location.pathname.includes('review') ? 3 : 1;
-      const payload = { draft_id: draftId, activity_name: formData.activity_name, org_name: formData.org_name, current_step: step, form_data: formData, ocr_results: ocrResults };
+      const payload = { draft_id: draftId, activity_name: formData.activity_name, org_name: formData.org_name, current_step: step, form_data: formData, ocr_results: ocrResults, user_email: auth?.user?.email || '' };
       const r = await fetch('/api/v1/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const j = await r.json();
       if (j.success) setDraftId(j.draft_id);
       return j.success;
     } catch { return false; }
-  }, [formData, ocrResults, draftId, location.pathname]);
+  }, [formData, ocrResults, draftId, auth, location.pathname]);
 
   const restoreDraft = useCallback((draft: any) => {
     setFormData(draft.form_data || emptyForm); setOcrResults(draft.ocr_results || []);
@@ -155,6 +154,7 @@ export default function App() {
     <Routes>
       {/* Public */}
       <Route path="/" element={<LoginPage onLogin={handleLogin} />} />
+      <Route path="/select-role" element={auth?.user?.can_choose_role ? <RoleSelectPage user={auth.user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
       <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
       <Route path="/register" element={<RegisterPage />} />
 
@@ -168,7 +168,7 @@ export default function App() {
         : <Navigate to="/login" />} />
       <Route path="/member/upload" element={<UploadMaterials {...wizardProps} onNext={() => navigate('/member/fill')} onHome={promptSaveBeforeHome} />} />
       <Route path="/member/fill" element={<FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} />} />
-      <Route path="/member/review" element={<ReviewSubmit formData={formData} invoiceFiles={invoiceFiles} evidenceFiles={evidenceFiles} reEditInvoicePaths={reEditInvoicePaths} reEditEvidencePaths={reEditEvidencePaths} reEditInvoiceUrls={reEditInvoiceUrls} reEditEvidenceUrls={reEditEvidenceUrls} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} />} />
+      <Route path="/member/review" element={<ReviewSubmit formData={formData} invoiceFiles={invoiceFiles} evidenceFiles={evidenceFiles} reEditInvoicePaths={reEditInvoicePaths} reEditEvidencePaths={reEditEvidencePaths} reEditInvoiceUrls={reEditInvoiceUrls} reEditEvidenceUrls={reEditEvidenceUrls} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} />} />
 
       {/* Reviewer routes */}
       <Route path="/reviewer" element={auth?.user?.is_reviewer ? <ReviewerDashboard user={auth.user} onLogout={handleLogout} /> : <Navigate to="/login" />} />

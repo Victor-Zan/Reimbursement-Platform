@@ -11,6 +11,7 @@ interface Props {
   reEditEvidencePaths?: string[];
   reEditInvoiceUrls?: string[];
   reEditEvidenceUrls?: string[];
+  userEmail?: string;
   submitResult: { message: string; zip_filename: string } | null;
   setSubmitResult: (r: { message: string; zip_filename: string } | null) => void;
   onBack: () => void;
@@ -27,6 +28,7 @@ export default function ReviewSubmit({
   reEditEvidencePaths = [],
   reEditInvoiceUrls = [],
   reEditEvidenceUrls = [],
+  userEmail = '',
   submitResult,
   setSubmitResult,
   onBack,
@@ -77,6 +79,7 @@ export default function ReviewSubmit({
     form.append('finance_officer', formData.finance_officer);
     form.append('activity_leader_opinion', formData.activity_leader_opinion);
     form.append('alipay_account', formData.alipay_account);
+    form.append('user_email', userEmail);
 
     form.append('existing_invoice_paths', JSON.stringify(reEditInvoicePaths));
     form.append('existing_evidence_paths', JSON.stringify(reEditEvidencePaths));

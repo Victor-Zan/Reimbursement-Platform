@@ -34,7 +34,7 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user
   // 加载草稿数量
   const loadDraftCount = async () => {
     try {
-      const r = await fetch('/api/v1/drafts');
+      const r = await fetch(`/api/v1/drafts?user_email=${encodeURIComponent(user?.email || '')}`);
       const j = await r.json();
       if (j.success) setDraftCount(j.drafts.length);
     } catch {}
@@ -46,7 +46,7 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user
   const handleOpenDrafts = async () => {
     setLoading(true);
     try {
-      const r = await fetch('/api/v1/drafts');
+      const r = await fetch(`/api/v1/drafts?user_email=${encodeURIComponent(user?.email || '')}`);
       const j = await r.json();
       if (j.success) setDrafts(j.drafts);
     } catch {}
@@ -58,7 +58,7 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user
   const handleOpenHistory = async () => {
     setLoading(true);
     try {
-      const r = await fetch('/api/v1/submissions');
+      const r = await fetch(`/api/v1/submissions?user_email=${encodeURIComponent(user?.email || '')}`);
       const j = await r.json();
       if (j.success) setSubmissions(j.submissions);
     } catch {}
@@ -82,7 +82,7 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user
     setLoading(true);
     try {
       // List submissions and check review status
-      const r = await fetch('/api/v1/submissions');
+      const r = await fetch(`/api/v1/submissions?user_email=${encodeURIComponent(user?.email || '')}`);
       const j = await r.json();
       if (j.success) {
         const items = [];

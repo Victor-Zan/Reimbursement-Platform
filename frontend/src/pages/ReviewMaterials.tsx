@@ -78,7 +78,7 @@ export default function ReviewMaterials({ user }: Props) {
                  onClick={() => openReview(s.filename)}>
               <div className="draft-info">
                 <strong>📦 {s.filename}</strong>
-                <span className="draft-meta">{formatSize(s.size)} · {s.modified.slice(0,19).replace('T',' ')}</span>
+                <span className="draft-meta">{formatSize(s.size)} · {s.modified.slice(0,19).replace('T',' ')}{s.reviewer_email ? ` · 审核人：${s.reviewer_email}` : ''}</span>
               </div>
               {statusBadge(s.status)}
             </div>

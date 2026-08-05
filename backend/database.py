@@ -33,9 +33,17 @@ def init_db():
                     current_step  INTEGER DEFAULT 1,
                     form_data     JSONB DEFAULT '{}',
                     ocr_results   JSONB DEFAULT '[]',
+                    user_email    VARCHAR(255) DEFAULT '',
                     created_at    TIMESTAMP DEFAULT NOW(),
                     updated_at    TIMESTAMP DEFAULT NOW()
                 );
+            """)
+            # 兼容旧数据：无 user_email 的列
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE drafts ADD COLUMN user_email VARCHAR(255) DEFAULT '';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (

@@ -221,6 +221,7 @@ async def submit_package(
     evidence_files: list[UploadFile] = File(default_factory=list),
     existing_invoice_paths: str = Form("[]"),
     existing_evidence_paths: str = Form("[]"),
+    user_email: str = Form(""),
 ):
     """
     提交完整报销申请包（支持多发票）。
@@ -314,7 +315,7 @@ async def submit_package(
         with _conn.cursor() as _cur:
             _cur.execute(
                 "INSERT INTO submissions_data (zip_filename, user_email, form_data) VALUES (%s, %s, %s)",
-                (os.path.basename(zip_path), "",
+                (os.path.basename(zip_path), user_email or "",
                  json.dumps({"form": full_form, "invoice_paths": saved_invoice_paths, "evidence_paths": saved_evidence_paths}, ensure_ascii=False)),
             )
         _conn.commit()
@@ -472,23 +473,22 @@ async def api_approve_application(app_id: int):
 @app.post("/api/v1/drafts")
 async def api_save_draft(data: dict):
     """保存草稿。"""
-    draft_id = data.get("draft_id")
     did = save_draft(
         activity_name=data.get("activity_name", ""),
         org_name=data.get("org_name", ""),
         current_step=data.get("current_step", 1),
         form_data=data.get("form_data", {}),
         ocr_results=data.get("ocr_results", []),
-        draft_id=draft_id,
+        user_email=data.get("user_email", ""),
+        draft_id=data.get("draft_id"),
     )
     return {"success": True, "draft_id": did}
 
 
 @app.get("/api/v1/drafts")
-async def api_list_drafts():
-    """列出所有草稿摘要。"""
-    drafts = list_drafts()
-    return {"success": True, "drafts": drafts}
+async def api_list_drafts(user_email: str = ""):
+    """列出草稿（按用户邮箱过滤）。"""
+    return {"success": True, "drafts": list_drafts(user_email)}
 
 
 @app.get("/api/v1/drafts/{draft_id}")
@@ -571,12 +571,29 @@ async def api_serve_upload(subdir: str, filename: str):
 # ---- 历史提交 ----
 
 @app.get("/api/v1/submissions")
-async def api_list_submissions():
-    """列出 submissions 目录下的 ZIP 文件。"""
+async def api_list_submissions(user_email: str = ""):
+    """列出 submissions 目录下的 ZIP 文件（成员只看自己的）。"""
+    from database import get_connection as _get_conn
+    # 获取该用户的 ZIP 列表（成员只看自己的）
+    user_zips = set()
+    _conn = _get_conn()
+    try:
+        with _conn.cursor() as _cur:
+            if user_email:
+                _cur.execute(
+                    "SELECT zip_filename FROM submissions_data WHERE user_email = %s",
+                    (user_email,))
+                user_zips = {r[0] for r in _cur.fetchall()}
+            # 无邮箱 = 返回空列表（成员端必须登录）
+    finally:
+        _conn.close()
+
     files = []
     if os.path.isdir(SUBMISSIONS_DIR):
         for fname in os.listdir(SUBMISSIONS_DIR):
             if not fname.endswith(".zip"):
+                continue
+            if fname not in user_zips:
                 continue
             fpath = os.path.join(SUBMISSIONS_DIR, fname)
             stat = os.stat(fpath)
