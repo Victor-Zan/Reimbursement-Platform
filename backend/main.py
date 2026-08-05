@@ -373,6 +373,35 @@ async def api_me(token: str = ""):
 
 # ---- 审核 API ----
 
+@app.get("/api/v1/review/stats")
+async def api_review_stats():
+    """审核仪表盘统计数据（含无审核记录的 pending）。"""
+    from database import get_connection as _get_conn
+    import os as _os
+    _conn = _get_conn()
+    try:
+        with _conn.cursor() as _cur:
+            # 获取每条提交的最新审核状态
+            _cur.execute("""
+                SELECT ra.submission_zip, ra.status
+                FROM review_annotations ra
+                WHERE ra.id IN (SELECT MAX(id) FROM review_annotations GROUP BY submission_zip)
+            """)
+            reviewed = {r[0]: r[1] for r in _cur.fetchall()}
+        # 统计
+        stats = {"pending": 0, "approved": 0, "rejected": 0}
+        # 遍历 submissions_data 中所有 ZIP
+        if _os.path.isdir(SUBMISSIONS_DIR):
+            from config import SUBMISSIONS_DIR as _SD
+            for fname in _os.listdir(_SD):
+                if not fname.endswith(".zip"): continue
+                status = reviewed.get(fname, "pending")
+                stats[status] = stats.get(status, 0) + 1
+        return {"success": True, "stats": stats}
+    finally:
+        _conn.close()
+
+
 @app.get("/api/v1/review/submissions")
 async def api_review_list():
     """审核员查看所有提交的 ZIP + 审核状态。"""

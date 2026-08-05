@@ -32,6 +32,9 @@ export default function FillForm({
 }: Props) {
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [validating, setValidating] = useState(false);
+  // 金额超标校验：所有发票的报销金额必须 ≤ 发票总额
+  const amountErrors = formData.invoices.map(inv => inv.reimbursement_amount > inv.invoice_total && inv.invoice_total > 0);
+  const hasAmountError = amountErrors.some(Boolean);
 
   const handleValidate = async () => {
     setValidating(true);
@@ -161,7 +164,7 @@ export default function FillForm({
               <input
                 type="number"
                 step="0.01"
-                className="form-input"
+                className={`form-input ${amountErrors[invIdx] ? 'error' : ''}`}
                 value={invoice.reimbursement_amount || ''}
                 onChange={e =>
                   updateInvoice(invIdx, {
@@ -169,6 +172,9 @@ export default function FillForm({
                   })
                 }
               />
+              {amountErrors[invIdx] && (
+                <div className="form-error">报销金额不能超过该发票总额 ¥{invoice.invoice_total.toFixed(2)}</div>
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">
@@ -261,7 +267,8 @@ export default function FillForm({
           <button
             className="btn btn-primary"
             onClick={handleValidate}
-            disabled={validating}
+            disabled={validating || hasAmountError}
+            title={hasAmountError ? '请修正报销金额后再继续' : ''}
           >
             {validating ? (
               <><span className="spinner" /> 校验中...</>

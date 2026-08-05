@@ -159,7 +159,7 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
 
       {/* Member routes */}
-      <Route path="/member" element={auth ? <HomePage onEnterVat={() => { resetAll(); navigate('/member/upload'); }} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onApplyReviewer={() => navigate('/member/apply')}
+      <Route path="/member" element={auth ? <HomePage onEnterVat={() => { resetAll(); navigate('/member/upload'); }} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onLogout={handleLogout} onApplyReviewer={() => navigate('/member/apply')}
         onReEdit={(data: any) => {
           setFormData(data.form_data || data);
           setSubmitResult(null);
