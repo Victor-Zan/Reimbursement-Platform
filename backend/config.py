@@ -5,6 +5,16 @@
 """
 import os
 
+# 加载 .env 文件（若存在）
+_ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.isfile(_ENV_PATH):
+    with open(_ENV_PATH, encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 # ---- 路径 ----
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_PATH = os.path.join(os.path.dirname(BASE_DIR), "空白报销表.xls")
@@ -21,8 +31,8 @@ EXPECTED_TAX_ID = "12440300066312613F"
 OCR_ENGINE = os.getenv("OCR_ENGINE", "baidu")
 
 # 百度 OCR 配置（使用百度云时填写）
-BAIDU_OCR_API_KEY = os.getenv("BAIDU_OCR_API_KEY", "hAiSEcKPJFD7xCYjKoseuqs7")
-BAIDU_OCR_SECRET_KEY = os.getenv("BAIDU_OCR_SECRET_KEY", "vAYQBWOAQNUjOXozjcCQt3ZKOpfREFG9")
+BAIDU_OCR_API_KEY = os.getenv("BAIDU_OCR_API_KEY", "")
+BAIDU_OCR_SECRET_KEY = os.getenv("BAIDU_OCR_SECRET_KEY", "")
 BAIDU_OCR_TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token"
 BAIDU_OCR_VAT_INVOICE_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/vat_invoice"
 
