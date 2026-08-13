@@ -302,7 +302,22 @@ async def submit_package(
         raise HTTPException(500, f"打包失败: {str(e)}")
 
     # 保存完整表单数据 + 文件路径到数据库（用于打回后重新编辑）
+    # 检测是否为重审提交（之前被打回过）
     from database import get_connection as _get_conn
+    zip_name = os.path.basename(zip_path)
+    _conn2 = _get_conn()
+    try:
+        with _conn2.cursor() as _cur2:
+            _cur2.execute("SELECT status FROM review_annotations WHERE submission_zip = %s ORDER BY id DESC LIMIT 1", (zip_name,))
+            prev = _cur2.fetchone()
+            if prev and prev[0] == "rejected":
+                _cur2.execute(
+                    "INSERT INTO review_annotations (submission_zip, status) VALUES (%s, 'resubmitted')",
+                    (zip_name,))
+                _conn2.commit()
+    finally:
+        _conn2.close()
+
     full_form = {
         "activity_name": activity_name, "org_name": org_name,
         "activity_end_date": activity_end_date, "reimbursement_date": reimbursement_date,
@@ -371,6 +386,34 @@ async def api_me(token: str = ""):
     return {"success": True, "user": user}
 
 
+# ---- 成员统计 ----
+
+@app.get("/api/v1/member/stats")
+async def api_member_stats(user_email: str = ""):
+    """成员仪表盘统计：本月提交数、待审核数、已通过数。"""
+    from database import get_connection as _get_conn
+    _conn = _get_conn()
+    stats = {"monthly": 0, "pending": 0, "approved": 0}
+    try:
+        with _conn.cursor() as _cur:
+            if user_email:
+                _cur.execute("SELECT zip_filename FROM submissions_data WHERE user_email = %s", (user_email,))
+                user_zips = {r[0] for r in _cur.fetchall()}
+                _cur.execute("""
+                    SELECT ra.submission_zip, ra.status FROM review_annotations ra
+                    WHERE ra.id IN (SELECT MAX(id) FROM review_annotations GROUP BY submission_zip)
+                """)
+                reviews = {r[0]: r[1] for r in _cur.fetchall()}
+                for zip_name in user_zips:
+                    status = reviews.get(zip_name, "pending")
+                    if status == "pending": stats["pending"] += 1
+                    elif status == "approved": stats["approved"] += 1
+                stats["monthly"] = len(user_zips)
+    finally:
+        _conn.close()
+    return {"success": True, "stats": stats}
+
+
 # ---- 审核 API ----
 
 @app.get("/api/v1/review/stats")
@@ -389,7 +432,7 @@ async def api_review_stats():
             """)
             reviewed = {r[0]: r[1] for r in _cur.fetchall()}
         # 统计
-        stats = {"pending": 0, "approved": 0, "rejected": 0}
+        stats = {"pending": 0, "approved": 0, "rejected": 0, "resubmitted": 0}
         # 遍历 submissions_data 中所有 ZIP
         if _os.path.isdir(SUBMISSIONS_DIR):
             from config import SUBMISSIONS_DIR as _SD

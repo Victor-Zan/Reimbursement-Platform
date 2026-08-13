@@ -191,7 +191,7 @@ class PDFInvoiceEngine(BaseOCREngine):
             try:
                 name = _clean_item_name(_strip_spec_and_unit(name_raw))
                 up = float(unit_price)
-                q = float(qty)
+                q = int(float(qty))
                 amt = float(amount)
                 tax = float(tax_amount)
                 items.append(InvoiceItem(
@@ -217,7 +217,7 @@ class PDFInvoiceEngine(BaseOCREngine):
                     items.append(InvoiceItem(
                         name=name,
                         unit_price=float(unit_price),
-                        quantity=float(qty),
+                        quantity=int(float(qty)),
                         amount=float(amount),
                         tax_amount=0.0, total_with_tax=float(amount),
                     ))
@@ -239,7 +239,7 @@ class PDFInvoiceEngine(BaseOCREngine):
                     for i, name in enumerate(item_names):
                         base = i * 4
                         try:
-                            qty = float(numbers[base]) if base < len(numbers) else 1.0
+                            qty = int(float(numbers[base])) if base < len(numbers) else 1
                             up = float(numbers[base + 1]) if base + 1 < len(numbers) else 0.0
                             amt = float(numbers[base + 2]) if base + 2 < len(numbers) else 0.0
                             tax = float(numbers[base + 3]) if base + 3 < len(numbers) else 0.0
@@ -355,9 +355,9 @@ class BaiduOCREngine(BaseOCREngine):
             except (ValueError, TypeError):
                 up = 0.0
             try:
-                qty = float(nums.get(row_id, "1"))
+                qty = int(float(nums.get(row_id, "1")))
             except (ValueError, TypeError):
-                qty = 1.0
+                qty = 1
             try:
                 amt = float(amounts.get(row_id, "0"))
             except (ValueError, TypeError):

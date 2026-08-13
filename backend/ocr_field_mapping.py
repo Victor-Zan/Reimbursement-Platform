@@ -12,7 +12,7 @@ class InvoiceItem:
     """发票明细行（OCR提取的货物/服务条目）"""
     name: str = ""                 # 货物名称
     unit_price: float = 0.0        # 单价（税前）
-    quantity: float = 1.0          # 数量
+    quantity: int = 1               # 数量（整数）
     amount: float = 0.0            # 金额（税前）
     tax_amount: float = 0.0        # 税额
     total_with_tax: float = 0.0    # 含税金额

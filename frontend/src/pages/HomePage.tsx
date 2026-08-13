@@ -5,7 +5,6 @@ interface Props {
   onOpenDrafts: () => void;
   onOpenHistory: () => void;
   user?: any;
-  onLogout?: () => void;
   onApplyReviewer?: () => void;
   onReEdit?: (data: any) => void;
 }
@@ -13,7 +12,7 @@ interface Props {
 interface DraftSummary { id: string; activity_name: string; org_name: string; current_step: number; updated_at: string; }
 interface SubmissionFile { filename: string; size: number; modified: string; }
 
-export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user, onLogout, onApplyReviewer, onReEdit }: Props) {
+export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user, onApplyReviewer, onReEdit }: Props) {
   const [draftCount, setDraftCount] = useState(0);
   const [showDrafts, setShowDrafts] = useState(false);
   const [drafts, setDrafts] = useState<DraftSummary[]>([]);
@@ -29,6 +28,12 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user
   const [showApply, setShowApply] = useState(false);
   const [applyEmail, setApplyEmail] = useState(user?.email || '');
   const [applyReason, setApplyReason] = useState('');
+  const [memberStats, setMemberStats] = useState({ monthly: 0, pending: 0, approved: 0 });
+
+  const loadMemberStats = async () => {
+    try { const r = await fetch(`/api/v1/member/stats?user_email=${encodeURIComponent(user?.email || '')}`); const j = await r.json(); if (j.success) setMemberStats(j.stats); } catch {}
+  };
+  useEffect(() => { if (user?.email) loadMemberStats(); }, [user?.email]);
 
   const loadDraftCount = async () => {
     try { const r = await fetch(`/api/v1/drafts?user_email=${encodeURIComponent(user?.email || '')}`); const j = await r.json(); if (j.success) setDraftCount(j.drafts.length); } catch {}
@@ -108,14 +113,17 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user
   return (
     <div className="home-page">
       <div className="home-header">
-        <h1>报销自动化平台</h1>
-        <p>香港中文大学（深圳）学生活动经费报销</p>
-        {user && <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>{user.email} | <span className="auth-link" onClick={onLogout}>退出登录</span></p>}
+        <h1>社团成员工作台</h1>
+        <div className="home-status-row">
+          <div className="home-status-item"><span className="home-status-num">{memberStats.monthly}</span><span>本月提交</span></div>
+          <div className="home-status-item"><span className="home-status-num" style={{ color: 'var(--warning)' }}>{memberStats.pending}</span><span>待审核</span></div>
+          <div className="home-status-item"><span className="home-status-num" style={{ color: 'var(--success)' }}>{memberStats.approved}</span><span>已通过</span></div>
+        </div>
       </div>
       <div className="home-grid">
         <div className="home-card home-card-large" onClick={onEnterVat}>
           <div className="home-card-icon">📄</div>
-          <div className="home-card-content"><h2>增值税报销</h2><p>学生活动经费在线报销</p><span className="home-card-badge">已开放</span></div>
+          <div className="home-card-content"><h2>增值税报销</h2><p>适用于增值税普通发票的学生活动经费报销，支持多发票上传、OCR自动识别、一键生成报销表</p><span className="home-card-badge">已开放</span></div>
         </div>
         <div className="home-card-stack">
           <div className="home-card home-card-small" onClick={() => alert('功能开发中，敬请期待')}><span className="home-card-icon">📎</span><span className="home-card-label">其他类报销</span></div>
@@ -179,7 +187,7 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>📦 {f.filename}</strong><span className={`badge ${f.status === 'approved' ? 'badge-ok' : 'badge-error'}`}>{f.status === 'approved' ? '已通过' : '已打回'}</span></div>
                 {f.status === 'rejected' && (<>
                   <div style={{ fontSize: 13, color: 'var(--gray-600)' }}>{f.invoice_comment && <p>📎 发票：{f.invoice_comment}</p>}{f.evidence_comment && <p>📷 凭证：{f.evidence_comment}</p>}{f.form_comment && <p>📋 报销表：{f.form_comment}</p>}</div>
-                  {onReEdit && (<button className="btn btn-primary" style={{ padding: '4px 14px', fontSize: 13, marginTop: 8 }} onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { setShowFeedback(false); onReEdit(j.form_data); } else alert('未找到原始数据'); } catch { alert('加载失败'); } }}>✏️ 重新编辑</button>)}
+                  {onReEdit && (<button className="btn btn-primary" style={{ padding: '4px 14px', fontSize: 13, marginTop: 8 }} onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { setShowFeedback(false); const hasMaterial = !!(f.invoice_comment || f.evidence_comment); onReEdit({ ...j.form_data, _reEditStep: hasMaterial ? 1 : 2 }); } else alert('未找到原始数据'); } catch { alert('加载失败'); } }}>✏️ 重新编辑</button>)}
                 </>)}
               </div>
             ))}

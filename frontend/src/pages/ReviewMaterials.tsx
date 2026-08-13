@@ -67,12 +67,13 @@ export default function ReviewMaterials({ user }: Props) {
     if (statusFilter === '待审核' && s.status !== 'pending') return false;
     if (statusFilter === '已通过' && s.status !== 'approved') return false;
     if (statusFilter === '已打回' && s.status !== 'rejected') return false;
+    if (statusFilter === '重审' && s.status !== 'resubmitted') return false;
     if (dateFrom && s.modified < dateFrom) return false;
     if (dateTo && s.modified > dateTo + 'T23:59:59') return false;
     return true;
   });
   const formatSize = (b: number) => b < 1024*1024 ? `${(b/1024).toFixed(1)} KB` : `${(b/(1024*1024)).toFixed(1)} MB`;
-  const statusBadge = (s: string) => s === 'approved' ? <span className="badge badge-ok">已通过</span> : s === 'rejected' ? <span className="badge badge-error">已打回</span> : <span className="badge badge-warn">待审核</span>;
+  const statusBadge = (s: string) => s === 'approved' ? <span className="badge badge-ok">已通过</span> : s === 'rejected' ? <span className="badge badge-error">已打回</span> : s === 'resubmitted' ? <span className="badge" style={{ background: '#e67e22', color: '#fff' }}>重审</span> : <span className="badge badge-warn">待审核</span>;
   const presetInvoice = (t: string) => setInvoiceComment(p => p ? p + '；' + t : t);
   const presetEvidence = (t: string) => setEvidenceComment(p => p ? p + '；' + t : t);
   const presetForm = (t: string) => setFormComment(p => p ? p + '；' + t : t);
@@ -83,7 +84,7 @@ export default function ReviewMaterials({ user }: Props) {
       <h2>📋 材料审核</h2>
       <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
         <select className="form-input" style={{ width: 120 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          {['全部', '待审核', '已通过', '已打回'].map(o => <option key={o} value={o}>{o}</option>)}
+          {['全部', '待审核', '已通过', '已打回', '重审'].map(o => <option key={o} value={o}>{o}</option>)}
         </select>
         <input type="date" className="form-input" style={{ width: 140, fontSize: 12 }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="起始日期" />
         <span style={{ color: 'var(--gray-400)', fontSize: 12 }}>至</span>

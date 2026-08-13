@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import HomePage from './pages/HomePage';
 import RoleSelectPage from './pages/RoleSelectPage';
+import TopNav from './components/TopNav';
 import ReviewerDashboard from './pages/ReviewerDashboard';
 import ReviewMaterials from './pages/ReviewMaterials';
 import ManagePermissions from './pages/ManagePermissions';
@@ -152,30 +154,19 @@ export default function App() {
 
   return (
     <Routes>
-      {/* Public */}
-      <Route path="/" element={<LoginPage onLogin={handleLogin} />} />
+      <Route path="/" element={<LandingPage />} />
       <Route path="/select-role" element={auth?.user?.can_choose_role ? <RoleSelectPage user={auth.user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
       <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      {/* Member routes */}
-      <Route path="/member" element={auth ? <HomePage onEnterVat={() => { resetAll(); navigate('/member/upload'); }} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onLogout={handleLogout} onApplyReviewer={() => navigate('/member/apply')}
-        onReEdit={(data: any) => {
-          setFormData(data.form_data || data);
-          setSubmitResult(null);
-          navigate('/member/fill');
-        }} />
-        : <Navigate to="/login" />} />
-      <Route path="/member/upload" element={<UploadMaterials {...wizardProps} onNext={() => navigate('/member/fill')} onHome={promptSaveBeforeHome} />} />
-      <Route path="/member/fill" element={<FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} />} />
-      <Route path="/member/review" element={<ReviewSubmit formData={formData} invoiceFiles={invoiceFiles} evidenceFiles={evidenceFiles} reEditInvoicePaths={reEditInvoicePaths} reEditEvidencePaths={reEditEvidencePaths} reEditInvoiceUrls={reEditInvoiceUrls} reEditEvidenceUrls={reEditEvidenceUrls} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} />} />
+      <Route path="/member" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><HomePage onEnterVat={() => { resetAll(); navigate('/member/upload'); }} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onApplyReviewer={() => navigate('/member/apply')} onReEdit={(data: any) => { setFormData(data.form_data || data); setSubmitResult(null); navigate(data._reEditStep === 1 ? '/member/upload' : '/member/fill'); }} /></> : <Navigate to="/login" />} />
+      <Route path="/member/upload" element={<><TopNav user={auth?.user} onLogout={handleLogout} /><UploadMaterials {...wizardProps} onNext={() => navigate('/member/fill')} onHome={promptSaveBeforeHome} /></>} />
+      <Route path="/member/fill" element={<><TopNav user={auth?.user} onLogout={handleLogout} /><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></>} />
+      <Route path="/member/review" element={<><TopNav user={auth?.user} onLogout={handleLogout} /><ReviewSubmit formData={formData} invoiceFiles={invoiceFiles} evidenceFiles={evidenceFiles} reEditInvoicePaths={reEditInvoicePaths} reEditEvidencePaths={reEditEvidencePaths} reEditInvoiceUrls={reEditInvoiceUrls} reEditEvidenceUrls={reEditEvidenceUrls} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></>} />
+      <Route path="/reviewer" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ReviewerDashboard user={auth.user} onLogout={handleLogout} /></> : <Navigate to="/login" />} />
+      <Route path="/reviewer/materials" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ReviewMaterials user={auth.user} /></> : <Navigate to="/login" />} />
+      <Route path="/reviewer/permissions" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ManagePermissions /></> : <Navigate to="/login" />} />
 
-      {/* Reviewer routes */}
-      <Route path="/reviewer" element={auth?.user?.is_reviewer ? <ReviewerDashboard user={auth.user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
-      <Route path="/reviewer/materials" element={auth?.user?.is_reviewer ? <ReviewMaterials user={auth.user} /> : <Navigate to="/login" />} />
-      <Route path="/reviewer/permissions" element={auth?.user?.is_reviewer ? <ManagePermissions /> : <Navigate to="/login" />} />
-
-      {/* Default redirect */}
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
