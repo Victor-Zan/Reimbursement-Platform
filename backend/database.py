@@ -56,15 +56,23 @@ def init_db():
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS review_annotations (
-                    id               SERIAL PRIMARY KEY,
-                    submission_zip   VARCHAR(500) NOT NULL,
-                    status           VARCHAR(20) DEFAULT 'pending',
-                    reviewer_email   VARCHAR(255) DEFAULT '',
-                    invoice_comment  TEXT DEFAULT '',
-                    evidence_comment TEXT DEFAULT '',
-                    form_comment     TEXT DEFAULT '',
-                    created_at       TIMESTAMP DEFAULT NOW()
+                    id                SERIAL PRIMARY KEY,
+                    submission_zip    VARCHAR(500) NOT NULL,
+                    status            VARCHAR(20) DEFAULT 'pending',
+                    reviewer_email    VARCHAR(255) DEFAULT '',
+                    invoice_comment   TEXT DEFAULT '',
+                    evidence_comment  TEXT DEFAULT '',
+                    form_comment      TEXT DEFAULT '',
+                    material_comments JSONB DEFAULT '{}',
+                    created_at        TIMESTAMP DEFAULT NOW()
                 );
+            """)
+            # 兼容旧表：新增材料批注列（保单/身份凭证/行程单/支付记录等，key->批注）
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE review_annotations ADD COLUMN material_comments JSONB DEFAULT '{}';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS reviewer_applications (

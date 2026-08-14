@@ -9,9 +9,10 @@ interface Props {
   updateInvoiceItems: (invIndex: number, items: DetailRow[]) => void;
   ocrResults?: any; onBack: () => void; onNext: () => void;
   onSaveDraft: () => Promise<boolean>; onHome: () => void;
+  onAddInvoice: () => void; onRemoveInvoice: (invIndex: number) => void;
 }
 
-export default function FillForm({ formData, updateForm, updateInvoice, updateInvoiceItems, onBack, onNext, onSaveDraft, onHome }: Props) {
+export default function FillForm({ formData, updateForm, updateInvoice, updateInvoiceItems, onBack, onNext, onSaveDraft, onHome, onAddInvoice, onRemoveInvoice }: Props) {
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -22,6 +23,12 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
   const handleSave = async () => { setSaving(true); const ok = await onSaveDraft(); setSaving(false); alert(ok ? '草稿已保存' : '保存失败，请重试'); };
 
   const handleValidate = async () => {
+    // 手动添加的票据必须先填总额（现有校验规则按总额约束报销金额）
+    const missingIdx = formData.invoices.findIndex(inv => inv.invoice_total <= 0);
+    if (missingIdx >= 0) {
+      setErrors([{ rule: '发票总额', message: `第 ${missingIdx + 1} 张发票/票据的总额未填写，请先填写总额` }]);
+      return;
+    }
     setValidating(true);
     try {
       const r = await fetch('/api/v1/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
@@ -58,13 +65,32 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
               <span className={`badge ${invoice.buyer_name_valid ? 'badge-ok' : 'badge-warn'}`} style={{ marginLeft: 6 }}>{invoice.buyer_name_valid ? '✓' : '⚠'}</span>
               {invoice.invoice_total > 0 && ` | 总额 ¥${invoice.invoice_total.toFixed(2)}`}
             </span>}
+            {formData.invoices.length > 1 && (
+              <button className="btn btn-secondary" style={{ float: 'right', padding: '2px 10px', fontSize: 12, color: 'var(--danger)' }}
+                onClick={() => { if (window.confirm(`确定删除发票 ${invIdx + 1}？`)) onRemoveInvoice(invIdx); }}>🗑 删除</button>
+            )}
           </h2>
+
+          {/* 手动添加的票据（非 OCR 来源）：填写开票日期与总额 */}
+          {invoice.invoice_total <= 0 && (
+            <div className="form-row" style={{ marginBottom: 16 }}>
+              <div className="form-group">
+                <label className="form-label">开票日期</label>
+                <input type="date" className="form-input" value={invoice.invoice_date} onChange={e => updateInvoice(invIdx, { invoice_date: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">发票总额 <span className="required">*</span></label>
+                <input type="number" step="0.01" className="form-input" value={invoice.invoice_total || ''} onChange={e => updateInvoice(invIdx, { invoice_total: parseFloat(e.target.value) || 0 })} placeholder="填写发票/票据总额" />
+              </div>
+            </div>
+          )}
 
           <div style={{ marginBottom: 16 }}>
             <span className="form-label">报销明细</span>
             <DetailTable items={invoice.items} onChange={(items) => updateInvoiceItems(invIdx, items)}
               invoiceTotal={invoice.invoice_total}
-              actualTotal={invoice.items.reduce((sum, item) => sum + (item.unit_price || 0) * (item.quantity || 0), 0)} />
+              actualTotal={invoice.items.reduce((sum, item) => sum + (item.unit_price || 0) * (item.quantity || 0), 0)}
+              allowNegativePrice={formData.type === 'travel'} />
           </div>
 
           <div className="form-row">
@@ -82,6 +108,11 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
           </div>
         </div>
       ))}
+
+      {/* 添加发票/票据 */}
+      <div className="card" style={{ textAlign: 'center' }}>
+        <button className="btn btn-secondary" onClick={onAddInvoice} style={{ width: '100%' }}>＋ 添加发票/票据</button>
+      </div>
 
       {/* 整体合计 */}
       <div className="card" style={{ textAlign: 'right', fontSize: 16, fontWeight: 700 }}>实际花费合计：¥{formData.actual_total.toFixed(2)}</div>

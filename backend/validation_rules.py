@@ -26,6 +26,9 @@ class InvoiceSectionData:
 @dataclass
 class ReimbursementFormData:
     """报销表完整表单数据"""
+    # 报销类型（vat/insurance/travel/bulk，旧数据兜底 vat）
+    type: str = "vat"
+
     # 表头（所有发票共享）
     activity_name: str = ""
     org_name: str = ""
@@ -47,12 +50,15 @@ class ReimbursementFormData:
 # ---- 校验函数 ----
 
 def check_detail_rows_complete(data: ReimbursementFormData) -> tuple[bool, str]:
-    """凡填写了物品名称的行，单价/数量/购买途径/是否可重复利用必须齐全"""
+    """凡填写了物品名称的行，单价/数量/购买途径/是否可重复利用必须齐全。
+    出行类报销允许负数单价（如退票差价），其他类型单价必须为正。"""
+    allow_negative = data.type == "travel"
     for inv_idx, invoice in enumerate(data.invoices):
         for i, item in enumerate(invoice.items):
             if item.get("name", "").strip():
                 missing = []
-                if not item.get("unit_price") or item["unit_price"] <= 0:
+                price = item.get("unit_price")
+                if not price or (price <= 0 and not allow_negative):
                     missing.append("单价")
                 if not item.get("quantity") or item["quantity"] <= 0:
                     missing.append("数量")
@@ -67,7 +73,8 @@ def check_detail_rows_complete(data: ReimbursementFormData) -> tuple[bool, str]:
 
 
 def check_at_least_one_item(data: ReimbursementFormData) -> tuple[bool, str]:
-    """至少有一行完整有效的报销项"""
+    """至少有一行完整有效的报销项（出行类允许负数单价）"""
+    allow_negative = data.type == "travel"
     for invoice in data.invoices:
         for item in invoice.items:
             name = item.get("name", "").strip()
@@ -75,7 +82,8 @@ def check_at_least_one_item(data: ReimbursementFormData) -> tuple[bool, str]:
             qty = item.get("quantity", 0)
             channel = item.get("purchase_channel", "").strip()
             reusable = item.get("reusable", "").strip()
-            if name and price > 0 and qty > 0 and channel and reusable:
+            price_ok = (bool(price) and price != 0) if allow_negative else price > 0
+            if name and price_ok and qty > 0 and channel and reusable:
                 return True, ""
     return False, "明细表格至少需要一条完整有效的报销项"
 

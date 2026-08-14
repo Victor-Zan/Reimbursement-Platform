@@ -36,12 +36,7 @@ BAIDU_OCR_SECRET_KEY = os.getenv("BAIDU_OCR_SECRET_KEY", "")
 BAIDU_OCR_TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token"
 BAIDU_OCR_VAT_INVOICE_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/vat_invoice"
 
-# ---- 上传限制 ----
-MAX_INVOICE_SIZE_MB = 10
-MAX_EVIDENCE_SIZE_MB = 20
-MIN_EVIDENCE_COUNT = 1
-ALLOWED_INVOICE_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/jpg"}
-ALLOWED_EVIDENCE_TYPES = {"image/png", "image/jpeg", "image/jpg"}
+# ---- 上传限制（按报销类型的材料配置见 reimbursement_types.py）----
 
 # ---- 数据库 (PostgreSQL) ----
 DB_HOST = os.getenv("DB_HOST", "localhost")

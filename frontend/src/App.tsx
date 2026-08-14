@@ -3,7 +3,6 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import HomePage from './pages/HomePage';
 import RoleSelectPage from './pages/RoleSelectPage';
 import TopNav from './components/TopNav';
 import ReviewerDashboard from './pages/ReviewerDashboard';
@@ -12,7 +11,10 @@ import ManagePermissions from './pages/ManagePermissions';
 import UploadMaterials from './pages/UploadMaterials';
 import FillForm from './pages/FillForm';
 import ReviewSubmit from './pages/ReviewSubmit';
-import { OCRResult, ReimbursementFormData, InvoiceSection, DetailRow } from './types';
+import HomePage from './pages/HomePage';
+import TypeSelectPage from './pages/TypeSelectPage';
+import { OCRResult, ReimbursementFormData, InvoiceSection, DetailRow, ReimbursementType, MaterialKey } from './types';
+import { MATERIALS } from './config/materials';
 
 const STORAGE_KEY = 'reimbursement_auth';
 
@@ -25,10 +27,21 @@ function makeEmptyInvoice(): InvoiceSection {
 }
 
 const emptyForm: ReimbursementFormData = {
+  type: 'vat',
   activity_name: '', org_name: '', activity_end_date: '',
   reimbursement_date: new Date().toISOString().slice(0, 10),
-  invoices: [makeEmptyInvoice()], actual_total: 0,
+  invoices: [], actual_total: 0,
   finance_officer: '', activity_leader_opinion: '', alipay_account: '',
+};
+
+/** 单种材料的向导状态：新上传文件 + 重编辑场景下的原有文件 */
+export interface MaterialEntry { files: File[]; existingUrls: string[]; existingPaths: string[]; }
+export type MaterialFilesState = Record<MaterialKey, MaterialEntry>;
+
+const emptyMaterials = (): MaterialFilesState => {
+  const entries = {} as MaterialFilesState;
+  (Object.keys(MATERIALS) as MaterialKey[]).forEach(k => { entries[k] = { files: [], existingUrls: [], existingPaths: [] }; });
+  return entries;
 };
 
 function loadAuth(): { token: string; user: any } | null {
@@ -54,21 +67,22 @@ export default function App() {
   // ---- OCR / Form state (shared across wizard steps) ----
   const [ocrResults, setOcrResults] = useState<OCRResult[]>([]);
   const [formData, setFormData] = useState<ReimbursementFormData>(emptyForm);
-  const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
-  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
+  const [materials, setMaterials] = useState<MaterialFilesState>(emptyMaterials);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ message: string; zip_filename: string } | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
-  const [reEditInvoiceUrls, setReEditInvoiceUrls] = useState<string[]>([]);
-  const [reEditEvidenceUrls, setReEditEvidenceUrls] = useState<string[]>([]);
-  const [reEditInvoicePaths, setReEditInvoicePaths] = useState<string[]>([]);
-  const [reEditEvidencePaths, setReEditEvidencePaths] = useState<string[]>([]);
 
-  const resetAll = useCallback(() => {
-    setFormData(emptyForm); setOcrResults([]); setInvoiceFiles([]);
-    setEvidenceFiles([]); setSubmitResult(null); setDraftId(null);
-    setReEditInvoiceUrls([]); setReEditEvidenceUrls([]);
-    setReEditInvoicePaths([]); setReEditEvidencePaths([]);
+  const resetAll = useCallback((type: ReimbursementType = 'vat') => {
+    setFormData({ ...emptyForm, type }); setOcrResults([]); setMaterials(emptyMaterials());
+    setSubmitResult(null); setDraftId(null);
+  }, []);
+
+  const setMaterialFiles = useCallback((key: MaterialKey, files: File[]) => {
+    setMaterials(p => ({ ...p, [key]: { ...p[key], files } }));
+  }, []);
+
+  const clearMaterialExisting = useCallback((key: MaterialKey) => {
+    setMaterials(p => ({ ...p, [key]: { ...p[key], existingUrls: [], existingPaths: [] } }));
   }, []);
 
   const handleLogin = useCallback((token: string, user: any) => {
@@ -103,7 +117,8 @@ export default function App() {
   }, [formData, ocrResults, draftId, auth, location.pathname]);
 
   const restoreDraft = useCallback((draft: any) => {
-    setFormData(draft.form_data || emptyForm); setOcrResults(draft.ocr_results || []);
+    // 旧草稿无 type 时兜底 vat
+    setFormData({ ...emptyForm, ...(draft.form_data || emptyForm) }); setOcrResults(draft.ocr_results || []);
     setDraftId(draft.id); setSubmitResult(null);
     const step = draft.current_step || 1;
     navigate(step === 1 ? '/member/upload' : step === 2 ? '/member/fill' : '/member/review');
@@ -137,6 +152,16 @@ export default function App() {
       return { ...p, invoices, actual_total: total };
     });
   };
+  const addInvoice = useCallback(() => {
+    setFormData(p => ({ ...p, invoices: [...p.invoices, makeEmptyInvoice()] }));
+  }, []);
+  const removeInvoice = useCallback((invIndex: number) => {
+    setFormData(p => {
+      const invoices = p.invoices.filter((_, i) => i !== invIndex);
+      let total = 0; for (const inv of invoices) total += inv.reimbursement_amount || 0;
+      return { ...p, invoices, actual_total: total };
+    });
+  }, []);
   const applyOCRResults = useCallback((results: OCRResult[]) => {
     if (!results.length) return;
     const invoices: InvoiceSection[] = results.map(r => ({
@@ -149,8 +174,34 @@ export default function App() {
     setFormData(p => ({ ...p, invoices, actual_total: total }));
   }, []);
 
-  const clearReEdit = () => { setReEditInvoiceUrls([]); setReEditEvidenceUrls([]); setReEditInvoicePaths([]); setReEditEvidencePaths([]); };
-  const wizardProps = { invoiceFiles, setInvoiceFiles, evidenceFiles, setEvidenceFiles, ocrResults, setOcrResults, ocrLoading, setOcrLoading, applyOCRResults, reEditInvoiceUrls, reEditEvidenceUrls, onClearReEdit: clearReEdit };
+  const enterType = useCallback((type: ReimbursementType) => {
+    resetAll(type);
+    navigate('/member/upload');
+  }, [resetAll, navigate]);
+
+  // 打回重编辑：恢复表单、原有材料文件与来源 ZIP（重审标记用）
+  const handleReEdit = useCallback((data: any) => {
+    const restored = { ...emptyForm, ...(data.form_data || data) };
+    setFormData({ ...restored, previous_zip: data._previousZip || restored.previous_zip || '' });
+    setSubmitResult(null);
+    const existing = data._materials || {};
+    setMaterials(p => {
+      const next = { ...p };
+      (Object.keys(next) as MaterialKey[]).forEach(k => {
+        const e = existing[k];
+        if (e) next[k] = { ...next[k], existingUrls: e.urls || [], existingPaths: e.paths || [] };
+      });
+      return next;
+    });
+    navigate(data._reEditStep === 1 ? '/member/upload' : '/member/fill');
+  }, [navigate]);
+
+  const wizardProps = {
+    reimbType: formData.type,
+    materials, setMaterialFiles, clearMaterialExisting,
+    ocrResults, setOcrResults, ocrLoading, setOcrLoading, applyOCRResults,
+    onAddManualInvoice: addInvoice,
+  };
 
   return (
     <Routes>
@@ -159,10 +210,11 @@ export default function App() {
       <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      <Route path="/member" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><HomePage onEnterVat={() => { resetAll(); navigate('/member/upload'); }} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onApplyReviewer={() => navigate('/member/apply')} onReEdit={(data: any) => { setFormData(data.form_data || data); setSubmitResult(null); navigate(data._reEditStep === 1 ? '/member/upload' : '/member/fill'); }} /></> : <Navigate to="/login" />} />
-      <Route path="/member/upload" element={<><TopNav user={auth?.user} onLogout={handleLogout} /><UploadMaterials {...wizardProps} onNext={() => navigate('/member/fill')} onHome={promptSaveBeforeHome} /></>} />
-      <Route path="/member/fill" element={<><TopNav user={auth?.user} onLogout={handleLogout} /><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></>} />
-      <Route path="/member/review" element={<><TopNav user={auth?.user} onLogout={handleLogout} /><ReviewSubmit formData={formData} invoiceFiles={invoiceFiles} evidenceFiles={evidenceFiles} reEditInvoicePaths={reEditInvoicePaths} reEditEvidencePaths={reEditEvidencePaths} reEditInvoiceUrls={reEditInvoiceUrls} reEditEvidenceUrls={reEditEvidenceUrls} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></>} />
+      <Route path="/member" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><HomePage onEnterVat={() => enterType('vat')} onEnterOther={() => navigate('/member/type-select')} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onApplyReviewer={() => navigate('/member/apply')} onReEdit={handleReEdit} /></> : <Navigate to="/login" />} />
+      <Route path="/member/type-select" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><TypeSelectPage onEnterType={enterType} /></> : <Navigate to="/login" />} />
+      <Route path="/member/upload" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><UploadMaterials {...wizardProps} invoiceSectionCount={formData.invoices.length} onNext={() => navigate('/member/fill')} onHome={promptSaveBeforeHome} /></> : <Navigate to="/login" />} />
+      <Route path="/member/fill" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onAddInvoice={addInvoice} onRemoveInvoice={removeInvoice} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></> : <Navigate to="/login" />} />
+      <Route path="/member/review" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ReviewSubmit formData={formData} materials={materials} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></> : <Navigate to="/login" />} />
       <Route path="/reviewer" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ReviewerDashboard user={auth.user} onLogout={handleLogout} /></> : <Navigate to="/login" />} />
       <Route path="/reviewer/materials" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ReviewMaterials user={auth.user} /></> : <Navigate to="/login" />} />
       <Route path="/reviewer/permissions" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ManagePermissions /></> : <Navigate to="/login" />} />

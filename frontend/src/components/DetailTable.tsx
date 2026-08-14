@@ -6,6 +6,8 @@ interface Props {
   invoiceTotal: number;
   actualTotal: number;
   readonly?: boolean;
+  /** 允许负数单价（仅出行类报销，如退票差价） */
+  allowNegativePrice?: boolean;
 }
 
 const CHANNEL_OPTIONS = ['', '网购', '实体店'];
@@ -17,6 +19,7 @@ export default function DetailTable({
   invoiceTotal,
   actualTotal,
   readonly = false,
+  allowNegativePrice = false,
 }: Props) {
   const updateRow = (index: number, field: keyof DetailRow, value: string | number | boolean) => {
     const updated = items.map((row, i) =>
@@ -115,7 +118,8 @@ export default function DetailTable({
                       <input
                         type="number"
                         step="0.01"
-                        min="0"
+                        min={allowNegativePrice ? undefined : "0"}
+                        title={allowNegativePrice ? '可填写负数单价（如退票差价）' : undefined}
                         value={item.unit_price || ''}
                         onChange={e =>
                           updateRow(i, 'unit_price', parseFloat(e.target.value) || 0)

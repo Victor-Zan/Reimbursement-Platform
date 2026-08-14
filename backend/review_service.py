@@ -1,6 +1,8 @@
 """
 审核服务：批注 CRUD、状态管理。
 """
+import json
+
 from database import get_connection
 
 
@@ -11,7 +13,7 @@ def get_review_status(submission_zip: str) -> dict:
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT id, submission_zip, status, reviewer_email,
-                          invoice_comment, evidence_comment, form_comment, created_at
+                          invoice_comment, evidence_comment, form_comment, material_comments, created_at
                    FROM review_annotations
                    WHERE submission_zip = %s
                    ORDER BY created_at DESC LIMIT 1""",
@@ -26,6 +28,7 @@ def get_review_status(submission_zip: str) -> dict:
                     "invoice_comment": "",
                     "evidence_comment": "",
                     "form_comment": "",
+                    "material_comments": {},
                 }
             return {
                 "id": row[0],
@@ -35,7 +38,8 @@ def get_review_status(submission_zip: str) -> dict:
                 "invoice_comment": row[4] or "",
                 "evidence_comment": row[5] or "",
                 "form_comment": row[6] or "",
-                "created_at": row[7].isoformat() if row[7] else "",
+                "material_comments": row[7] if isinstance(row[7], dict) else (json.loads(row[7]) if row[7] else {}),
+                "created_at": row[8].isoformat() if row[8] else "",
             }
     finally:
         conn.close()
@@ -66,18 +70,20 @@ def reject_submission(
     invoice_comment: str,
     evidence_comment: str,
     form_comment: str,
+    material_comments: dict | None = None,
 ) -> dict:
-    """打回并批注。"""
+    """打回并批注。material_comments 为新材料批注 {材料key: 批注}。"""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO review_annotations
                    (submission_zip, status, reviewer_email,
-                    invoice_comment, evidence_comment, form_comment)
-                   VALUES (%s, 'rejected', %s, %s, %s, %s)
+                    invoice_comment, evidence_comment, form_comment, material_comments)
+                   VALUES (%s, 'rejected', %s, %s, %s, %s, %s)
                    RETURNING id""",
-                (submission_zip, reviewer_email, invoice_comment, evidence_comment, form_comment),
+                (submission_zip, reviewer_email, invoice_comment, evidence_comment, form_comment,
+                 json.dumps(material_comments or {}, ensure_ascii=False)),
             )
             rid = cur.fetchone()[0]
             conn.commit()

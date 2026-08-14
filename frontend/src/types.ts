@@ -51,8 +51,15 @@ export interface InvoiceSection {
   items: DetailRow[];
 }
 
+/** 报销类型 */
+export type ReimbursementType = 'vat' | 'insurance' | 'travel' | 'bulk';
+
+/** 材料 key（与后端 reimbursement_types.py 的 MATERIALS 一致） */
+export type MaterialKey = 'invoices' | 'evidence' | 'policy' | 'rider_ids' | 'itinerary' | 'payments';
+
 /** 完整报销表单数据 */
 export interface ReimbursementFormData {
+  type: ReimbursementType;
   activity_name: string;
   org_name: string;
   activity_end_date: string;
@@ -62,6 +69,8 @@ export interface ReimbursementFormData {
   finance_officer: string;
   activity_leader_opinion: string;
   alipay_account: string;
+  /** 重新编辑来源的旧 ZIP 文件名（打回重传时用于标记"重审"，随草稿持久化） */
+  previous_zip?: string;
 }
 
 /** OCR批量上传单条结果 */

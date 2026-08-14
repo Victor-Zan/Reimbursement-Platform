@@ -48,6 +48,7 @@ def build_form_data(json_data: dict) -> ReimbursementFormData:
         ))
 
     return ReimbursementFormData(
+        type=json_data.get("type", "vat"),
         activity_name=json_data.get("activity_name", ""),
         org_name=json_data.get("org_name", ""),
         activity_end_date=json_data.get("activity_end_date", ""),

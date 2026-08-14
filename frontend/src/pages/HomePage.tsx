@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
+import { MATERIALS, typeLabel, typeColor } from '../config/materials';
+import type { MaterialKey } from '../types';
 
 interface Props {
   onEnterVat: () => void;
+  onEnterOther: () => void;
   onOpenDrafts: () => void;
   onOpenHistory: () => void;
   user?: any;
@@ -10,9 +13,9 @@ interface Props {
 }
 
 interface DraftSummary { id: string; activity_name: string; org_name: string; current_step: number; updated_at: string; }
-interface SubmissionFile { filename: string; size: number; modified: string; }
+interface SubmissionFile { filename: string; size: number; modified: string; reimb_type?: string; }
 
-export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user, onApplyReviewer, onReEdit }: Props) {
+export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpenHistory, user, onApplyReviewer, onReEdit }: Props) {
   const [draftCount, setDraftCount] = useState(0);
   const [showDrafts, setShowDrafts] = useState(false);
   const [drafts, setDrafts] = useState<DraftSummary[]>([]);
@@ -126,7 +129,7 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user
           <div className="home-card-content"><h2>增值税报销</h2><p>适用于增值税普通发票的学生活动经费报销，支持多发票上传、OCR自动识别、一键生成报销表</p><span className="home-card-badge">已开放</span></div>
         </div>
         <div className="home-card-stack">
-          <div className="home-card home-card-small" onClick={() => alert('功能开发中，敬请期待')}><span className="home-card-icon">📎</span><span className="home-card-label">其他类报销</span></div>
+          <div className="home-card home-card-small" onClick={onEnterOther}><span className="home-card-icon">📎</span><span className="home-card-label">其他类报销</span><span className="home-card-badge">保险 · 路费 · 大量发票</span></div>
           <div className="home-card home-card-small" onClick={handleOpenDrafts}><span className="home-card-icon">📝</span><span className="home-card-label">我的草稿</span>{draftCount > 0 && <span className="home-card-count">{draftCount} 条</span>}</div>
           <div className="home-card home-card-small" onClick={handleOpenHistory}><span className="home-card-icon">📂</span><span className="home-card-label">查看历史提交</span></div>
           <div className="home-card home-card-small" onClick={handleOpenFeedback}><span className="home-card-icon">📬</span><span className="home-card-label">审核反馈</span>{feedbackBadge > 0 && <span className="home-card-count" style={{ background: 'var(--danger)', color: 'white' }}>{feedbackBadge}</span>}</div>
@@ -168,6 +171,7 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user
              : <div className="submission-list">{filteredSubmissions.map((s, i) => (
               <div key={i} className="submission-item">
                 <div className="draft-info"><strong>📦 {s.filename}</strong><span className="draft-meta">{formatSize(s.size)} · {formatTime(s.modified)}</span></div>
+                <span className="badge" style={{ background: typeColor(s.reimb_type), color: '#fff' }}>{typeLabel(s.reimb_type)}</span>
                 <a href={`/api/v1/submissions/download/${encodeURIComponent(s.filename)}`} download className="btn btn-secondary" style={{ padding: '6px 14px', fontSize: 13 }}>📥 下载</a>
               </div>
             ))}</div>}
@@ -186,8 +190,11 @@ export default function HomePage({ onEnterVat, onOpenDrafts, onOpenHistory, user
               <div key={i} className="submission-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>📦 {f.filename}</strong><span className={`badge ${f.status === 'approved' ? 'badge-ok' : 'badge-error'}`}>{f.status === 'approved' ? '已通过' : '已打回'}</span></div>
                 {f.status === 'rejected' && (<>
-                  <div style={{ fontSize: 13, color: 'var(--gray-600)' }}>{f.invoice_comment && <p>📎 发票：{f.invoice_comment}</p>}{f.evidence_comment && <p>📷 凭证：{f.evidence_comment}</p>}{f.form_comment && <p>📋 报销表：{f.form_comment}</p>}</div>
-                  {onReEdit && (<button className="btn btn-primary" style={{ padding: '4px 14px', fontSize: 13, marginTop: 8 }} onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { setShowFeedback(false); const hasMaterial = !!(f.invoice_comment || f.evidence_comment); onReEdit({ ...j.form_data, _reEditStep: hasMaterial ? 1 : 2 }); } else alert('未找到原始数据'); } catch { alert('加载失败'); } }}>✏️ 重新编辑</button>)}
+                  <div style={{ fontSize: 13, color: 'var(--gray-600)' }}>{f.invoice_comment && <p>📎 发票：{f.invoice_comment}</p>}{f.evidence_comment && <p>📷 凭证：{f.evidence_comment}</p>}{Object.entries((f.material_comments || {}) as Record<string, string>).filter(([, c]) => c).map(([k, c]) => {
+                    const cfg = MATERIALS[k as MaterialKey];
+                    return <p key={k}>{cfg ? `${cfg.icon} ${cfg.label}` : k}：{c}</p>;
+                  })}{f.form_comment && <p>📋 报销表：{f.form_comment}</p>}</div>
+                  {onReEdit && (<button className="btn btn-primary" style={{ padding: '4px 14px', fontSize: 13, marginTop: 8 }} onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { setShowFeedback(false); const hasMaterial = !!(f.invoice_comment || f.evidence_comment || Object.values(f.material_comments || {}).some(c => c)); const _materials: any = {}; for (const k of Object.keys(j.material_urls || {})) { _materials[k] = { urls: j.material_urls[k], paths: (j.material_paths || {})[k] || [] }; } onReEdit({ ...j.form_data, _reEditStep: hasMaterial ? 1 : 2, _previousZip: f.filename, _materials }); } else alert('未找到原始数据'); } catch { alert('加载失败'); } }}>✏️ 重新编辑</button>)}
                 </>)}
               </div>
             ))}

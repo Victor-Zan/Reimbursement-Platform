@@ -18,12 +18,15 @@ from fastapi.responses import FileResponse
 from config import (
     UPLOADS_DIR,
     SUBMISSIONS_DIR,
-    MAX_INVOICE_SIZE_MB,
-    ALLOWED_INVOICE_TYPES,
     HOST,
     PORT,
 )
 from database import init_db
+from reimbursement_types import (
+    REIMBURSEMENT_TYPES,
+    TYPE_MATERIALS,
+    material_cfg,
+)
 from draft_service import save_draft, list_drafts, get_draft, delete_draft
 from ocr import get_ocr_engine
 from ocr_field_mapping import OCRResult, InvoiceItem
@@ -49,14 +52,15 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(SUBMISSIONS_DIR, exist_ok=True)
 
 
-def _validate_file(file: UploadFile, allowed_types: set, max_size_mb: int) -> bytes:
-    """校验上传文件，返回文件内容。"""
-    if file.content_type and file.content_type not in allowed_types:
-        raise HTTPException(400, f"不支持的文件类型: {file.content_type}")
+def _validate_file(file: UploadFile, cfg: dict) -> bytes:
+    """按材料配置校验上传文件（扩展名 + 大小），返回文件内容。"""
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in cfg["accept_exts"]:
+        raise HTTPException(400, f"{cfg['label']}不支持的文件类型: {ext}")
     content = file.file.read()
     size_mb = len(content) / (1024 * 1024)
-    if size_mb > max_size_mb:
-        raise HTTPException(400, f"文件过大 ({size_mb:.1f}MB)，限制 {max_size_mb}MB")
+    if size_mb > cfg["max_size_mb"]:
+        raise HTTPException(400, f"文件过大 ({size_mb:.1f}MB)，限制 {cfg['max_size_mb']}MB")
     file.file.seek(0)
     return content
 
@@ -69,6 +73,30 @@ def _save_upload(content: bytes, filename: str, subdir: str) -> str:
     with open(filepath, "wb") as f:
         f.write(content)
     return filepath
+
+
+def _strip_pdf_encryption(content: bytes) -> bytes:
+    """移除 PDF 的所有者密码加密（如保险公司电子保单，用户密码为空）。
+
+    浏览器审核端对带权限限制的 PDF 会显示受限提示，解密后即为普通 PDF。
+    真正需要密码才能打开的 PDF 解密失败时返回原内容。
+    """
+    if not content.startswith(b"%PDF") or b"/Encrypt" not in content:
+        return content
+    try:
+        import io as _io
+        from pypdf import PdfReader, PdfWriter
+        reader = PdfReader(_io.BytesIO(content))
+        if not reader.is_encrypted or not reader.decrypt(""):
+            return content
+        writer = PdfWriter()
+        for page in reader.pages:
+            writer.add_page(page)
+        buf = _io.BytesIO()
+        writer.write(buf)
+        return buf.getvalue()
+    except Exception:
+        return content
 
 
 def _ocr_result_to_dict(result: OCRResult) -> dict:
@@ -208,6 +236,8 @@ async def generate_excel(data: dict):
 
 @app.post("/api/v1/submit")
 async def submit_package(
+    type: str = Form("vat"),
+    previous_zip: str = Form(""),
     activity_name: str = Form(""),
     org_name: str = Form(""),
     activity_end_date: str = Form(""),
@@ -217,18 +247,27 @@ async def submit_package(
     finance_officer: str = Form(""),
     activity_leader_opinion: str = Form(""),
     alipay_account: str = Form(""),
-    invoice_files: list[UploadFile] = File(default_factory=list),
+    invoices_files: list[UploadFile] = File(default_factory=list),
     evidence_files: list[UploadFile] = File(default_factory=list),
-    existing_invoice_paths: str = Form("[]"),
+    policy_files: list[UploadFile] = File(default_factory=list),
+    rider_ids_files: list[UploadFile] = File(default_factory=list),
+    itinerary_files: list[UploadFile] = File(default_factory=list),
+    payments_files: list[UploadFile] = File(default_factory=list),
+    existing_invoices_paths: str = Form("[]"),
     existing_evidence_paths: str = Form("[]"),
+    existing_policy_paths: str = Form("[]"),
+    existing_rider_ids_paths: str = Form("[]"),
+    existing_itinerary_paths: str = Form("[]"),
+    existing_payments_paths: str = Form("[]"),
     user_email: str = Form(""),
 ):
     """
-    提交完整报销申请包（支持多发票）。
+    提交完整报销申请包（支持多发票与多种报销类型）。
     """
     invoices_data = json.loads(invoices_json)
 
     form = build_form_data({
+        "type": type,
         "activity_name": activity_name,
         "org_name": org_name,
         "activity_end_date": activity_end_date,
@@ -248,23 +287,66 @@ async def submit_package(
             "errors": validation.errors,
         })
 
-    # 保存上传文件（已有路径 + 新上传）
-    saved_invoice_paths = json.loads(existing_invoice_paths) if existing_invoice_paths else []
-    for f in invoice_files:
-        if f.filename:
-            content = await f.read()
-            saved_invoice_paths.append(_save_upload(content, f.filename, "invoices"))
+    # 保存上传文件（已有路径 + 新上传），按类型校验材料
+    # 文件校验只作用于新材料与新增类型专属规则；增值税的发票/活动凭证保持现状零校验
+    if type not in REIMBURSEMENT_TYPES:
+        raise HTTPException(400, f"未知报销类型: {type}")
 
-    saved_evidence_paths = json.loads(existing_evidence_paths) if existing_evidence_paths else []
-    for f in evidence_files:
-        if f.filename:
-            content = await f.read()
-            saved_evidence_paths.append(_save_upload(content, f.filename, "evidence"))
+    grouped_new = {
+        "invoices": invoices_files,
+        "evidence": evidence_files,
+        "policy": policy_files,
+        "rider_ids": rider_ids_files,
+        "itinerary": itinerary_files,
+        "payments": payments_files,
+    }
+    grouped_existing = {
+        "invoices": json.loads(existing_invoices_paths or "[]"),
+        "evidence": json.loads(existing_evidence_paths or "[]"),
+        "policy": json.loads(existing_policy_paths or "[]"),
+        "rider_ids": json.loads(existing_rider_ids_paths or "[]"),
+        "itinerary": json.loads(existing_itinerary_paths or "[]"),
+        "payments": json.loads(existing_payments_paths or "[]"),
+    }
+    NEW_MATERIAL_KEYS = {"policy", "rider_ids", "itinerary", "payments"}
+
+    material_paths = {}
+    for key in TYPE_MATERIALS[type]:
+        cfg = material_cfg(type, key)
+        existing = grouped_existing.get(key, [])
+        new_files = grouped_new.get(key, [])
+        total = len(existing) + len(new_files)
+
+        # 新材料：必传张数 + 上限校验（逐文件校验在保存时进行）
+        if key in NEW_MATERIAL_KEYS:
+            if total < cfg["min_count"]:
+                raise HTTPException(400, f"{cfg['label']}至少上传 {cfg['min_count']} 张")
+            if cfg["max_count"] is not None and total > cfg["max_count"]:
+                raise HTTPException(400, f"{cfg['label']}最多上传 {cfg['max_count']} 张")
+        # 发票：仅新增类型专属规则（增值税/保险保持现状）
+        elif key == "invoices":
+            if type == "bulk" and total > cfg["max_count"]:
+                raise HTTPException(400, f"大量发票报销最多上传 {cfg['max_count']} 张发票")
+            if type == "travel" and total != len(invoices_data):
+                raise HTTPException(400, f"票据区块数({len(invoices_data)})与票据文件数({total})不一致，请逐一对应")
+
+        paths = list(existing)
+        for f in new_files:
+            if f.filename:
+                if key in NEW_MATERIAL_KEYS:
+                    content = _validate_file(f, cfg)
+                else:
+                    content = await f.read()
+                # 带权限限制的 PDF（如电子保单）自动解密，避免审核端受限提示
+                if f.filename.lower().endswith(".pdf"):
+                    content = _strip_pdf_encryption(content)
+                paths.append(_save_upload(content, f.filename, cfg["upload_subdir"]))
+        material_paths[key] = paths
 
     # 对每张发票拼接信息条
     from invoice_annotator import annotate_invoice
     annotated_paths = []
-    for idx, inv_path in enumerate(saved_invoice_paths):
+    for idx, inv_path in enumerate(material_paths["invoices"]):
         try:
             inv_data = invoices_data[idx] if idx < len(invoices_data) else {}
             inv_items = inv_data.get("items", [])
@@ -293,8 +375,7 @@ async def submit_package(
     try:
         zip_path = create_submission_package(
             excel_path=excel_path,
-            invoice_files=annotated_paths,
-            evidence_files=saved_evidence_paths,
+            material_groups={**material_paths, "invoices": annotated_paths},
             output_dir=SUBMISSIONS_DIR,
             activity_name=activity_name,
         )
@@ -302,23 +383,26 @@ async def submit_package(
         raise HTTPException(500, f"打包失败: {str(e)}")
 
     # 保存完整表单数据 + 文件路径到数据库（用于打回后重新编辑）
-    # 检测是否为重审提交（之前被打回过）
+    # 检测是否为重审提交：打回重传时前端携带旧 ZIP 文件名（previous_zip），
+    # 旧 ZIP 最新状态为 rejected 则把新包标记为 resubmitted
     from database import get_connection as _get_conn
     zip_name = os.path.basename(zip_path)
-    _conn2 = _get_conn()
-    try:
-        with _conn2.cursor() as _cur2:
-            _cur2.execute("SELECT status FROM review_annotations WHERE submission_zip = %s ORDER BY id DESC LIMIT 1", (zip_name,))
-            prev = _cur2.fetchone()
-            if prev and prev[0] == "rejected":
-                _cur2.execute(
-                    "INSERT INTO review_annotations (submission_zip, status) VALUES (%s, 'resubmitted')",
-                    (zip_name,))
-                _conn2.commit()
-    finally:
-        _conn2.close()
+    if previous_zip:
+        _conn2 = _get_conn()
+        try:
+            with _conn2.cursor() as _cur2:
+                _cur2.execute("SELECT status FROM review_annotations WHERE submission_zip = %s ORDER BY id DESC LIMIT 1", (previous_zip,))
+                prev = _cur2.fetchone()
+                if prev and prev[0] == "rejected":
+                    _cur2.execute(
+                        "INSERT INTO review_annotations (submission_zip, status) VALUES (%s, 'resubmitted')",
+                        (zip_name,))
+                    _conn2.commit()
+        finally:
+            _conn2.close()
 
     full_form = {
+        "type": type,
         "activity_name": activity_name, "org_name": org_name,
         "activity_end_date": activity_end_date, "reimbursement_date": reimbursement_date,
         "invoices": invoices_data, "actual_total": actual_total,
@@ -331,7 +415,7 @@ async def submit_package(
             _cur.execute(
                 "INSERT INTO submissions_data (zip_filename, user_email, form_data) VALUES (%s, %s, %s)",
                 (os.path.basename(zip_path), user_email or "",
-                 json.dumps({"form": full_form, "invoice_paths": saved_invoice_paths, "evidence_paths": saved_evidence_paths}, ensure_ascii=False)),
+                 json.dumps({"form": full_form, "invoice_paths": material_paths.get("invoices", []), "evidence_paths": material_paths.get("evidence", []), "material_paths": material_paths}, ensure_ascii=False)),
             )
         _conn.commit()
     finally:
@@ -467,13 +551,25 @@ async def api_review_list():
                 "modified": _dt.fromtimestamp(stat.st_mtime).isoformat(),
             })
 
-    # 关联审核状态
+    # 关联审核状态 + 报销类型（旧数据无 type 兜底 vat）
     reviews = {r["submission_zip"]: r for r in list_all_reviews()}
+    type_map = {}
+    from database import get_connection as _get_conn
+    _conn = _get_conn()
+    try:
+        with _conn.cursor() as _cur:
+            _cur.execute("SELECT zip_filename, form_data->'form'->>'type' FROM submissions_data")
+            for zip_name, rtype in _cur.fetchall():
+                type_map[zip_name] = rtype or "vat"
+    finally:
+        _conn.close()
+
     for f in files:
         review = reviews.get(f["filename"], {})
         f["status"] = review.get("status", "pending")
         f["reviewer_email"] = review.get("reviewer_email", "")
         f["reviewed_at"] = review.get("created_at", "")
+        f["reimb_type"] = type_map.get(f["filename"], "vat")
 
     files.sort(key=lambda f: f["modified"], reverse=True)
     return {"success": True, "submissions": files}
@@ -507,6 +603,7 @@ async def api_reject(data: dict):
         data.get("invoice_comment", ""),
         data.get("evidence_comment", ""),
         data.get("form_comment", ""),
+        data.get("material_comments", {}),
     )
     return result
 
@@ -602,28 +699,29 @@ async def api_get_submission_data(filename: str):
             if "form" in data:
                 result["form_data"] = data["form"]
                 # 将服务端文件路径转为可访问的 URL
-                ipaths = data.get("invoice_paths", [])
-                epaths = data.get("evidence_paths", [])
-                result["invoice_urls"] = []
-                result["invoice_paths"] = []
-                result["evidence_urls"] = []
-                result["evidence_paths"] = []
-                for p in ipaths:
-                    if os.path.isfile(p):
-                        result["invoice_paths"].append(p)
-                        rel = os.path.relpath(p, UPLOADS_DIR).replace("\\", "/")
-                        result["invoice_urls"].append(f"/api/v1/uploads/{rel}")
-                for p in epaths:
-                    if os.path.isfile(p):
-                        result["evidence_paths"].append(p)
-                        rel = os.path.relpath(p, UPLOADS_DIR).replace("\\", "/")
-                        result["evidence_urls"].append(f"/api/v1/uploads/{rel}")
+                mp = data.get("material_paths") or {}
+                if not mp:
+                    # 兼容旧数据（只有 invoice_paths/evidence_paths）
+                    mp = {
+                        "invoices": data.get("invoice_paths", []),
+                        "evidence": data.get("evidence_paths", []),
+                    }
+                result["material_urls"] = {}
+                result["material_paths"] = {}
+                for key, paths in mp.items():
+                    urls: list = []
+                    valid: list = []
+                    for p in paths:
+                        if os.path.isfile(p):
+                            valid.append(p)
+                            rel = os.path.relpath(p, UPLOADS_DIR).replace("\\", "/")
+                            urls.append(f"/api/v1/uploads/{rel}")
+                    result["material_paths"][key] = valid
+                    result["material_urls"][key] = urls
             else:
                 result["form_data"] = data
-                result["invoice_urls"] = []
-                result["invoice_paths"] = []
-                result["evidence_urls"] = []
-                result["evidence_paths"] = []
+                result["material_urls"] = {}
+                result["material_paths"] = {}
             return result
     finally:
         _conn.close()
@@ -648,14 +746,17 @@ async def api_list_submissions(user_email: str = ""):
     from database import get_connection as _get_conn
     # 获取该用户的 ZIP 列表（成员只看自己的）
     user_zips = set()
+    _type_map = {}
     _conn = _get_conn()
     try:
         with _conn.cursor() as _cur:
             if user_email:
                 _cur.execute(
-                    "SELECT zip_filename FROM submissions_data WHERE user_email = %s",
+                    "SELECT zip_filename, form_data->'form'->>'type' FROM submissions_data WHERE user_email = %s",
                     (user_email,))
-                user_zips = {r[0] for r in _cur.fetchall()}
+                for zip_name, rtype in _cur.fetchall():
+                    user_zips.add(zip_name)
+                    _type_map[zip_name] = rtype or "vat"
             # 无邮箱 = 返回空列表（成员端必须登录）
     finally:
         _conn.close()
@@ -673,6 +774,7 @@ async def api_list_submissions(user_email: str = ""):
                 "filename": fname,
                 "size": stat.st_size,
                 "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "reimb_type": _type_map.get(fname, "vat"),
             })
     files.sort(key=lambda f: f["modified"], reverse=True)
     return {"success": True, "submissions": files}
@@ -695,16 +797,18 @@ async def api_download_submission(filename: str):
 async def api_preview_submission(filename: str):
     """
     解压 ZIP 并返回文件内容供审核员在线预览。
-    返回发票图片、活动凭证图片的 base64，以及报销表 Excel 的下载链接。
+    按 ZIP 内文件夹名分流各材料（发票/活动凭证/保单/身份凭证/行程单/支付记录），
+    返回 base64 数据，以及报销表 Excel 的下载链接。
     """
-    import zipfile, base64 as b64
+    import zipfile, base64 as b64, mimetypes
+    from reimbursement_types import MATERIALS as _MATERIALS
 
     fpath = os.path.join(SUBMISSIONS_DIR, filename)
     if not os.path.isfile(fpath) or not filename.endswith(".zip"):
         raise HTTPException(404, "文件不存在")
 
-    invoices = []
-    evidences = []
+    folder_to_key = {cfg["zip_folder"]: key for key, cfg in _MATERIALS.items()}
+    materials: dict[str, list] = {key: [] for key in _MATERIALS}
     form = None
 
     with zipfile.ZipFile(fpath, "r") as zf:
@@ -713,23 +817,18 @@ async def api_preview_submission(filename: str):
                 continue
             data = zf.read(info.filename)
             name = os.path.basename(info.filename)
-            ext = os.path.splitext(name)[1].lower()
-
-            if "发票" in info.filename:
-                mime = "image/png" if ext in (".png",) else "image/jpeg"
-                if ext == ".pdf":
-                    mime = "application/pdf"
-                invoices.append({
+            folder = info.filename.split("/")[0]
+            key = folder_to_key.get(folder)
+            if key:
+                # 兼容历史提交：加密 PDF 预览时兜底解密
+                if name.lower().endswith(".pdf"):
+                    data = _strip_pdf_encryption(data)
+                mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
+                materials[key].append({
                     "name": name,
                     "data_url": f"data:{mime};base64,{b64.b64encode(data).decode()}",
                 })
-            elif "凭证" in info.filename:
-                mime = "image/png" if ext in (".png",) else "image/jpeg"
-                evidences.append({
-                    "name": name,
-                    "data_url": f"data:{mime};base64,{b64.b64encode(data).decode()}",
-                })
-            elif "报销表" in info.filename:
+            elif folder == "报销表":
                 form = {
                     "name": name,
                     "download_url": f"/api/v1/submissions/download/{filename}",
@@ -737,8 +836,10 @@ async def api_preview_submission(filename: str):
 
     return {
         "success": True,
-        "invoices": invoices,
-        "evidences": evidences,
+        "materials": materials,
+        # 兼容旧字段名
+        "invoices": materials["invoices"],
+        "evidences": materials["evidence"],
         "form": form,
     }
 

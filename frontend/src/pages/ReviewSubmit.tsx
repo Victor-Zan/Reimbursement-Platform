@@ -1,16 +1,13 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import DetailTable from '../components/DetailTable';
 import StepIndicator from '../components/StepIndicator';
 import { ReimbursementFormData } from '../types';
+import { TYPE_MATERIALS, materialFor } from '../config/materials';
+import type { MaterialFilesState } from '../App';
 
 interface Props {
   formData: ReimbursementFormData;
-  invoiceFiles: File[];
-  evidenceFiles: File[];
-  reEditInvoicePaths?: string[];
-  reEditEvidencePaths?: string[];
-  reEditInvoiceUrls?: string[];
-  reEditEvidenceUrls?: string[];
+  materials: MaterialFilesState;
   userEmail?: string;
   submitResult: { message: string; zip_filename: string } | null;
   setSubmitResult: (r: { message: string; zip_filename: string } | null) => void;
@@ -22,12 +19,7 @@ interface Props {
 
 export default function ReviewSubmit({
   formData,
-  invoiceFiles,
-  evidenceFiles,
-  reEditInvoicePaths = [],
-  reEditEvidencePaths = [],
-  reEditInvoiceUrls = [],
-  reEditEvidenceUrls = [],
+  materials,
   userEmail = '',
   submitResult,
   setSubmitResult,
@@ -39,6 +31,7 @@ export default function ReviewSubmit({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const reimbType = formData.type || 'vat';
 
   const handleDownloadExcel = async () => {
     setDownloading(true);
@@ -70,6 +63,8 @@ export default function ReviewSubmit({
     setSubmitError('');
 
     const form = new FormData();
+    form.append('type', reimbType);
+    form.append('previous_zip', formData.previous_zip || '');
     form.append('activity_name', formData.activity_name);
     form.append('org_name', formData.org_name);
     form.append('activity_end_date', formData.activity_end_date);
@@ -81,10 +76,10 @@ export default function ReviewSubmit({
     form.append('alipay_account', formData.alipay_account);
     form.append('user_email', userEmail);
 
-    form.append('existing_invoice_paths', JSON.stringify(reEditInvoicePaths));
-    form.append('existing_evidence_paths', JSON.stringify(reEditEvidencePaths));
-    invoiceFiles.forEach(f => form.append('invoice_files', f));
-    evidenceFiles.forEach(f => form.append('evidence_files', f));
+    for (const key of TYPE_MATERIALS[reimbType]) {
+      form.append(`existing_${key}_paths`, JSON.stringify(materials[key].existingPaths));
+      materials[key].files.forEach(f => form.append(`${key}_files`, f));
+    }
 
     try {
       const resp = await fetch('/api/v1/submit', { method: 'POST', body: form });
@@ -218,23 +213,27 @@ export default function ReviewSubmit({
             <div className="preview-section">
               <h3>上传材料</h3>
               <div className="preview-grid">
-                <span className="label">发票文件</span>
-                <span className="value">{reEditInvoiceUrls.length + invoiceFiles.length} 张</span>
-                <span className="label">活动凭证</span>
-                <span className="value">{reEditEvidenceUrls.length + evidenceFiles.length} 张</span>
+                {TYPE_MATERIALS[reimbType].map(k => {
+                  const entry = materials[k];
+                  return (
+                    <Fragment key={k}>
+                      <span className="label">{materialFor(reimbType, k).label}</span>
+                      <span className="value">{entry.existingUrls.length + entry.files.length} 张</span>
+                    </Fragment>
+                  );
+                })}
               </div>
-              {(reEditInvoiceUrls.length + invoiceFiles.length > 0) && (
-                <div className="file-list" style={{ marginTop: 8 }}>
-                  {reEditInvoiceUrls.map((_, i) => (<div key={`ei_${i}`} className="file-chip">📎 发票_{i + 1} (原有)</div>))}
-                  {invoiceFiles.map((f, i) => (<div key={i} className="file-chip">📎 {f.name}</div>))}
-                </div>
-              )}
-              {(reEditEvidenceUrls.length + evidenceFiles.length > 0) && (
-                <div className="file-list" style={{ marginTop: 8 }}>
-                  {reEditEvidenceUrls.map((_, i) => (<div key={`ee_${i}`} className="file-chip">📷 凭证_{i + 1} (原有)</div>))}
-                  {evidenceFiles.map((f, i) => (<div key={i} className="file-chip">📷 {f.name}</div>))}
-                </div>
-              )}
+              {TYPE_MATERIALS[reimbType].map(k => {
+                const entry = materials[k];
+                const cfg = materialFor(reimbType, k);
+                if (entry.existingUrls.length + entry.files.length === 0) return null;
+                return (
+                  <div className="file-list" key={k} style={{ marginTop: 8 }}>
+                    {entry.existingUrls.map((_, i) => (<div key={`e_${i}`} className="file-chip">{cfg.icon} {cfg.label}_{i + 1} (原有)</div>))}
+                    {entry.files.map((f, i) => (<div key={i} className="file-chip">{cfg.icon} {f.name}</div>))}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
