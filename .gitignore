@@ -9,6 +9,10 @@ backend/submissions/
 backend/test_*.xlsx
 template.xls
 
+# 本地图片材料
+图片材料/
+模板报销表.png
+
 # Node
 frontend/node_modules/
 frontend/dist/

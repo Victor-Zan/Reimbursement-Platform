@@ -59,6 +59,8 @@ docker run -d --name reimbursement-postgres \
   -p 5435:5432 postgres:15-alpine
 ```
 
+> 密码需与 `backend/.env` 中的 `DB_PASSWORD` 保持一致。
+
 ### 2. 启动后端
 
 ```bash
