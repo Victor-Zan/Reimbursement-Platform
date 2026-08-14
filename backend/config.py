@@ -47,7 +47,7 @@ ALLOWED_EVIDENCE_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DB_PORT", "5435"))
 DB_USER = os.getenv("DB_USER", "reimbursement")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "改成你自己的密码")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "reimbursement_db")
 
 # ---- 服务器 ----

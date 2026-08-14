@@ -1,11 +1,15 @@
 """
 认证模块：JWT 签发/验证、密码哈希。
 """
+import os
+import secrets
+
 import jwt
 import bcrypt
 from datetime import datetime, timedelta, timezone
 
-JWT_SECRET = "请通过环境变量JWT_SECRET设置"
+# JWT 密钥：优先读取环境变量；未设置时每次启动随机生成（重启后所有登录态失效，需重新登录）
+JWT_SECRET = os.getenv("JWT_SECRET") or secrets.token_hex(32)
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24
 
