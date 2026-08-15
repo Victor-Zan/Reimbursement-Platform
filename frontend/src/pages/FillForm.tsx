@@ -20,6 +20,13 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
   const amountErrors = formData.invoices.map(inv => inv.reimbursement_amount > inv.invoice_total && inv.invoice_total > 0);
   const hasAmountError = amountErrors.some(Boolean);
 
+  // 支付宝账号格式校验：11 位手机号或邮箱
+  const ALIPAY_MOBILE = /^1[3-9]\d{9}$/;
+  const ALIPAY_EMAIL = /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/;
+  const alipayValue = formData.alipay_account.trim();
+  const isValidAlipay = ALIPAY_MOBILE.test(alipayValue) || ALIPAY_EMAIL.test(alipayValue);
+  const alipayError = alipayValue !== '' && !isValidAlipay ? '支付宝账号格式不正确，请输入 11 位手机号或邮箱' : '';
+
   const handleSave = async () => { setSaving(true); const ok = await onSaveDraft(); setSaving(false); alert(ok ? '草稿已保存' : '保存失败，请重试'); };
 
   const handleValidate = async () => {
@@ -27,6 +34,11 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
     const missingIdx = formData.invoices.findIndex(inv => inv.invoice_total <= 0);
     if (missingIdx >= 0) {
       setErrors([{ rule: '发票总额', message: `第 ${missingIdx + 1} 张发票/票据的总额未填写，请先填写总额` }]);
+      return;
+    }
+    // 支付宝账号格式校验
+    if (alipayError) {
+      setErrors([{ rule: '支付宝账号', message: alipayError }]);
       return;
     }
     setValidating(true);
@@ -125,7 +137,14 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
           <div className="form-group"><label className="form-label">活动负责人意见</label><input className="form-input" value={formData.activity_leader_opinion} onChange={e => setField('activity_leader_opinion', e.target.value)} placeholder="如：同意报销" /></div>
         </div>
         <div className="form-row">
-          <div className="form-group"><label className="form-label">支付宝账号 <span className="required">*</span></label><input className="form-input" value={formData.alipay_account} onChange={e => setField('alipay_account', e.target.value)} placeholder="填写收款支付宝账号" /></div>
+          <div className="form-group">
+            <label className="form-label">支付宝账号 <span className="required">*</span></label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input className={`form-input ${alipayError ? 'error' : ''}`} style={{ flex: 1 }} value={formData.alipay_account} onChange={e => setField('alipay_account', e.target.value)} placeholder="填写收款支付宝账号（手机号或邮箱）" />
+              {alipayValue !== '' && !alipayError && <span className="badge badge-ok">✓</span>}
+            </div>
+            {alipayError && <div className="form-error">{alipayError}</div>}
+          </div>
           <div />
         </div>
       </div>
@@ -145,7 +164,7 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary" onClick={handleSave} disabled={saving}>{saving ? <><span className="spinner" /> 保存中...</> : '💾 保存草稿'}</button>
-          <button className="btn btn-primary" onClick={handleValidate} disabled={validating || hasAmountError} title={hasAmountError ? '请修正报销金额后再继续' : ''}>{validating ? <><span className="spinner" /> 校验中...</> : '下一步：确认提交 →'}</button>
+          <button className="btn btn-primary" onClick={handleValidate} disabled={validating || hasAmountError || !!alipayError} title={hasAmountError ? '请修正报销金额后再继续' : alipayError ? '请修正支付宝账号格式后再继续' : ''}>{validating ? <><span className="spinner" /> 校验中...</> : '下一步：确认提交 →'}</button>
         </div>
       </div>
     </>

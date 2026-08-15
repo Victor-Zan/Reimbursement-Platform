@@ -5,6 +5,7 @@
 1. 编写校验函数（接收表单数据，返回 (bool, error_message)）
 2. 注册到 RULES 列表
 """
+import re
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -130,6 +131,18 @@ def check_invoice_sections_exist(data: ReimbursementFormData) -> tuple[bool, str
     return True, ""
 
 
+_ALIPAY_MOBILE_RE = re.compile(r"^1[3-9]\d{9}$")
+_ALIPAY_EMAIL_RE = re.compile(r"^[\w.+-]+@[\w-]+(\.[\w-]+)+$")
+
+
+def check_alipay_format(data: ReimbursementFormData) -> tuple[bool, str]:
+    """支付宝账号必须是 11 位手机号或邮箱"""
+    v = data.alipay_account.strip()
+    if v and not (_ALIPAY_MOBILE_RE.fullmatch(v) or _ALIPAY_EMAIL_RE.fullmatch(v)):
+        return False, "支付宝账号格式不正确，请输入 11 位手机号或邮箱"
+    return True, ""
+
+
 # 校验规则注册表（按执行顺序）
 RULES: list[tuple[str, Callable[[ReimbursementFormData], tuple[bool, str]]]] = [
     ("至少一张发票", check_invoice_sections_exist),
@@ -137,4 +150,5 @@ RULES: list[tuple[str, Callable[[ReimbursementFormData], tuple[bool, str]]]] = [
     ("至少一条有效报销项", check_at_least_one_item),
     ("必填项检查", check_required_fields),
     ("报销金额上限", check_reimbursement_le_invoice),
+    ("支付宝账号格式", check_alipay_format),
 ]

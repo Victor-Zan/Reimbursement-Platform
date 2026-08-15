@@ -5,6 +5,7 @@
 打包为ZIP文件，模拟推送至人工审核窗口的流程。
 """
 import os
+import secrets
 import zipfile
 from datetime import datetime
 
@@ -37,6 +38,10 @@ def create_submission_package(
     safe_name = "".join(c for c in safe_name if c not in r'\/:*?"<>|')
     zip_filename = f"报销申请_{safe_name}_{timestamp}.zip"
     zip_path = os.path.join(output_dir, zip_filename)
+    # 同一秒多次提交时避免同名覆盖：冲突时追加 4 位随机段重试
+    while os.path.exists(zip_path):
+        zip_filename = f"报销申请_{safe_name}_{timestamp}_{secrets.token_hex(2)}.zip"
+        zip_path = os.path.join(output_dir, zip_filename)
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         # 报销表

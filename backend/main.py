@@ -11,6 +11,8 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+import psycopg2
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -383,24 +385,8 @@ async def submit_package(
         raise HTTPException(500, f"打包失败: {str(e)}")
 
     # 保存完整表单数据 + 文件路径到数据库（用于打回后重新编辑）
-    # 检测是否为重审提交：打回重传时前端携带旧 ZIP 文件名（previous_zip），
-    # 旧 ZIP 最新状态为 rejected 则把新包标记为 resubmitted
-    from database import get_connection as _get_conn
-    zip_name = os.path.basename(zip_path)
-    if previous_zip:
-        _conn2 = _get_conn()
-        try:
-            with _conn2.cursor() as _cur2:
-                _cur2.execute("SELECT status FROM review_annotations WHERE submission_zip = %s ORDER BY id DESC LIMIT 1", (previous_zip,))
-                prev = _cur2.fetchone()
-                if prev and prev[0] == "rejected":
-                    _cur2.execute(
-                        "INSERT INTO review_annotations (submission_zip, status) VALUES (%s, 'resubmitted')",
-                        (zip_name,))
-                    _conn2.commit()
-        finally:
-            _conn2.close()
-
+    # 重传关联：打回重传时前端携带旧 ZIP 文件名（previous_zip）→ 新行 parent_id=旧 id、
+    # status='resubmitted'；查不到旧单（如草稿残留过期 previous_zip）则按普通 pending 提交
     full_form = {
         "type": type,
         "activity_name": activity_name, "org_name": org_name,
@@ -409,15 +395,33 @@ async def submit_package(
         "finance_officer": finance_officer, "activity_leader_opinion": activity_leader_opinion,
         "alipay_account": alipay_account,
     }
+    zip_name = os.path.basename(zip_path)
+    from database import get_connection as _get_conn
     _conn = _get_conn()
     try:
         with _conn.cursor() as _cur:
+            parent_id = None
+            if previous_zip:
+                _cur.execute("SELECT id FROM submissions WHERE zip_filename = %s", (previous_zip,))
+                row = _cur.fetchone()
+                parent_id = row[0] if row else None
             _cur.execute(
-                "INSERT INTO submissions_data (zip_filename, user_email, form_data) VALUES (%s, %s, %s)",
-                (os.path.basename(zip_path), user_email or "",
+                "INSERT INTO submissions (zip_filename, user_email, reimb_type, status, activity_name, parent_id, form_data) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (zip_name, user_email or "", type,
+                 "resubmitted" if parent_id is not None else "pending",
+                 activity_name, parent_id,
                  json.dumps({"form": full_form, "invoice_paths": material_paths.get("invoices", []), "evidence_paths": material_paths.get("evidence", []), "material_paths": material_paths}, ensure_ascii=False)),
             )
         _conn.commit()
+    except psycopg2.errors.UniqueViolation:
+        # 极低概率：packager 已加随机段，UNIQUE 冲突时清理刚生成的 ZIP 并提示重试
+        _conn.rollback()
+        try:
+            os.remove(zip_path)
+        except OSError:
+            pass
+        raise HTTPException(409, "提交冲突，请重试")
     finally:
         _conn.close()
 
@@ -474,25 +478,21 @@ async def api_me(token: str = ""):
 
 @app.get("/api/v1/member/stats")
 async def api_member_stats(user_email: str = ""):
-    """成员仪表盘统计：本月提交数、待审核数、已通过数。"""
+    """成员仪表盘统计：历史提交总数、待审核数（含重审）、已通过数。"""
     from database import get_connection as _get_conn
     _conn = _get_conn()
     stats = {"monthly": 0, "pending": 0, "approved": 0}
     try:
         with _conn.cursor() as _cur:
             if user_email:
-                _cur.execute("SELECT zip_filename FROM submissions_data WHERE user_email = %s", (user_email,))
-                user_zips = {r[0] for r in _cur.fetchall()}
                 _cur.execute("""
-                    SELECT ra.submission_zip, ra.status FROM review_annotations ra
-                    WHERE ra.id IN (SELECT MAX(id) FROM review_annotations GROUP BY submission_zip)
-                """)
-                reviews = {r[0]: r[1] for r in _cur.fetchall()}
-                for zip_name in user_zips:
-                    status = reviews.get(zip_name, "pending")
-                    if status == "pending": stats["pending"] += 1
-                    elif status == "approved": stats["approved"] += 1
-                stats["monthly"] = len(user_zips)
+                    SELECT COUNT(*),
+                           COUNT(*) FILTER (WHERE status IN ('pending', 'resubmitted')),
+                           COUNT(*) FILTER (WHERE status = 'approved')
+                    FROM submissions WHERE user_email = %s
+                """, (user_email,))
+                row = _cur.fetchone()
+                stats = {"monthly": row[0], "pending": row[1], "approved": row[2]}
     finally:
         _conn.close()
     return {"success": True, "stats": stats}
@@ -502,75 +502,59 @@ async def api_member_stats(user_email: str = ""):
 
 @app.get("/api/v1/review/stats")
 async def api_review_stats():
-    """审核仪表盘统计数据（含无审核记录的 pending）。"""
+    """审核仪表盘统计数据（以 submissions 行集为准）。"""
     from database import get_connection as _get_conn
-    import os as _os
     _conn = _get_conn()
+    stats = {"pending": 0, "approved": 0, "rejected": 0, "resubmitted": 0}
     try:
         with _conn.cursor() as _cur:
-            # 获取每条提交的最新审核状态
-            _cur.execute("""
-                SELECT ra.submission_zip, ra.status
-                FROM review_annotations ra
-                WHERE ra.id IN (SELECT MAX(id) FROM review_annotations GROUP BY submission_zip)
-            """)
-            reviewed = {r[0]: r[1] for r in _cur.fetchall()}
-        # 统计
-        stats = {"pending": 0, "approved": 0, "rejected": 0, "resubmitted": 0}
-        # 遍历 submissions_data 中所有 ZIP
-        if _os.path.isdir(SUBMISSIONS_DIR):
-            from config import SUBMISSIONS_DIR as _SD
-            for fname in _os.listdir(_SD):
-                if not fname.endswith(".zip"): continue
-                status = reviewed.get(fname, "pending")
-                stats[status] = stats.get(status, 0) + 1
-        return {"success": True, "stats": stats}
+            _cur.execute("SELECT status, COUNT(*) FROM submissions GROUP BY status")
+            for status, cnt in _cur.fetchall():
+                if status in stats:
+                    stats[status] = cnt
     finally:
         _conn.close()
+    return {"success": True, "stats": stats}
 
 
 @app.get("/api/v1/review/submissions")
 async def api_review_list():
-    """审核员查看所有提交的 ZIP + 审核状态。"""
-    from review_service import list_all_reviews, get_review_status
-    import os as _os
-    from config import SUBMISSIONS_DIR
-    from datetime import datetime as _dt
-
-    # 获取所有 ZIP 文件
-    files = []
-    if _os.path.isdir(SUBMISSIONS_DIR):
-        for fname in _os.listdir(SUBMISSIONS_DIR):
-            if not fname.endswith(".zip"):
-                continue
-            fpath = _os.path.join(SUBMISSIONS_DIR, fname)
-            stat = _os.stat(fpath)
-            files.append({
-                "filename": fname,
-                "size": stat.st_size,
-                "modified": _dt.fromtimestamp(stat.st_mtime).isoformat(),
-            })
-
-    # 关联审核状态 + 报销类型（旧数据无 type 兜底 vat）
-    reviews = {r["submission_zip"]: r for r in list_all_reviews()}
-    type_map = {}
+    """审核员查看所有提交 + 审核状态（以 submissions 行集为准，文件缺失如实标记）。"""
     from database import get_connection as _get_conn
     _conn = _get_conn()
+    files = []
     try:
         with _conn.cursor() as _cur:
-            _cur.execute("SELECT zip_filename, form_data->'form'->>'type' FROM submissions_data")
-            for zip_name, rtype in _cur.fetchall():
-                type_map[zip_name] = rtype or "vat"
+            _cur.execute("""
+                SELECT s.id, s.zip_filename, s.status, s.reimb_type, s.created_at,
+                       ann.reviewer_email, ann.created_at AS reviewed_at
+                FROM submissions s
+                LEFT JOIN LATERAL (
+                    SELECT reviewer_email, created_at FROM review_annotations ra
+                    WHERE ra.submission_id = s.id ORDER BY ra.id DESC LIMIT 1
+                ) ann ON TRUE
+                ORDER BY s.updated_at DESC, s.id DESC
+            """)
+            for row in _cur.fetchall():
+                _, fname, status, rtype, created_at, reviewer_email, reviewed_at = row
+                fpath = os.path.join(SUBMISSIONS_DIR, fname)
+                if os.path.isfile(fpath):
+                    stat = os.stat(fpath)
+                    size, modified, file_missing = stat.st_size, datetime.fromtimestamp(stat.st_mtime).isoformat(), False
+                else:
+                    size, modified, file_missing = 0, (created_at.isoformat() if created_at else ""), True
+                files.append({
+                    "filename": fname,
+                    "size": size,
+                    "modified": modified,
+                    "status": status or "pending",
+                    "reviewer_email": reviewer_email or "",
+                    "reviewed_at": reviewed_at.isoformat() if reviewed_at else "",
+                    "reimb_type": rtype or "vat",
+                    "file_missing": file_missing,
+                })
     finally:
         _conn.close()
-
-    for f in files:
-        review = reviews.get(f["filename"], {})
-        f["status"] = review.get("status", "pending")
-        f["reviewer_email"] = review.get("reviewer_email", "")
-        f["reviewed_at"] = review.get("created_at", "")
-        f["reimb_type"] = type_map.get(f["filename"], "vat")
-
     files.sort(key=lambda f: f["modified"], reverse=True)
     return {"success": True, "submissions": files}
 
@@ -688,7 +672,7 @@ async def api_get_submission_data(filename: str):
     try:
         with _conn.cursor() as _cur:
             _cur.execute(
-                "SELECT form_data FROM submissions_data WHERE zip_filename = %s ORDER BY created_at DESC LIMIT 1",
+                "SELECT form_data FROM submissions WHERE zip_filename = %s ORDER BY created_at DESC LIMIT 1",
                 (filename,),
             )
             row = _cur.fetchone()
@@ -742,41 +726,34 @@ async def api_serve_upload(subdir: str, filename: str):
 
 @app.get("/api/v1/submissions")
 async def api_list_submissions(user_email: str = ""):
-    """列出 submissions 目录下的 ZIP 文件（成员只看自己的）。"""
+    """列出成员自己的提交（以 submissions 行集为准，文件缺失如实标记）。"""
     from database import get_connection as _get_conn
-    # 获取该用户的 ZIP 列表（成员只看自己的）
-    user_zips = set()
-    _type_map = {}
     _conn = _get_conn()
+    files = []
     try:
         with _conn.cursor() as _cur:
             if user_email:
                 _cur.execute(
-                    "SELECT zip_filename, form_data->'form'->>'type' FROM submissions_data WHERE user_email = %s",
+                    "SELECT zip_filename, reimb_type, created_at FROM submissions "
+                    "WHERE user_email = %s ORDER BY created_at DESC, id DESC",
                     (user_email,))
-                for zip_name, rtype in _cur.fetchall():
-                    user_zips.add(zip_name)
-                    _type_map[zip_name] = rtype or "vat"
+                for fname, rtype, created_at in _cur.fetchall():
+                    fpath = os.path.join(SUBMISSIONS_DIR, fname)
+                    if os.path.isfile(fpath):
+                        stat = os.stat(fpath)
+                        size, modified, file_missing = stat.st_size, datetime.fromtimestamp(stat.st_mtime).isoformat(), False
+                    else:
+                        size, modified, file_missing = 0, (created_at.isoformat() if created_at else ""), True
+                    files.append({
+                        "filename": fname,
+                        "size": size,
+                        "modified": modified,
+                        "reimb_type": rtype or "vat",
+                        "file_missing": file_missing,
+                    })
             # 无邮箱 = 返回空列表（成员端必须登录）
     finally:
         _conn.close()
-
-    files = []
-    if os.path.isdir(SUBMISSIONS_DIR):
-        for fname in os.listdir(SUBMISSIONS_DIR):
-            if not fname.endswith(".zip"):
-                continue
-            if fname not in user_zips:
-                continue
-            fpath = os.path.join(SUBMISSIONS_DIR, fname)
-            stat = os.stat(fpath)
-            files.append({
-                "filename": fname,
-                "size": stat.st_size,
-                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "reimb_type": _type_map.get(fname, "vat"),
-            })
-    files.sort(key=lambda f: f["modified"], reverse=True)
     return {"success": True, "submissions": files}
 
 
