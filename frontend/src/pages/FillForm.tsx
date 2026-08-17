@@ -3,6 +3,13 @@ import DetailTable from '../components/DetailTable';
 import StepIndicator from '../components/StepIndicator';
 import { ReimbursementFormData, InvoiceSection, DetailRow, ValidationError } from '../types';
 
+/** 本地时区的今天（YYYY-MM-DD） */
+const todayStr = () => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 interface Props {
   formData: ReimbursementFormData; updateForm: (patch: Partial<ReimbursementFormData>) => void;
   updateInvoice: (invIndex: number, patch: Partial<InvoiceSection>) => void;
@@ -41,6 +48,16 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
       setErrors([{ rule: '支付宝账号', message: alipayError }]);
       return;
     }
+    // 日期不能晚于今天
+    const today = todayStr();
+    if (formData.activity_end_date && formData.activity_end_date > today) {
+      setErrors([{ rule: '活动时间', message: '活动时间不能晚于今天' }]);
+      return;
+    }
+    if (formData.reimbursement_date && formData.reimbursement_date > today) {
+      setErrors([{ rule: '报销时间', message: '报销时间不能晚于今天' }]);
+      return;
+    }
     setValidating(true);
     try {
       const r = await fetch('/api/v1/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
@@ -64,8 +81,8 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
           <div className="form-group"><label className="form-label">学生组织名称 <span className="required">*</span></label><input className="form-input" value={formData.org_name} onChange={e => setField('org_name', e.target.value)} placeholder="输入学生组织名称" /></div>
         </div>
         <div className="form-row">
-          <div className="form-group"><label className="form-label">活动时间（活动最后一天）<span className="required">*</span></label><input type="date" className="form-input" value={formData.activity_end_date} onChange={e => setField('activity_end_date', e.target.value)} /></div>
-          <div className="form-group"><label className="form-label">报销时间 <span className="required">*</span></label><input type="date" className="form-input" value={formData.reimbursement_date} onChange={e => setField('reimbursement_date', e.target.value)} /></div>
+          <div className="form-group"><label className="form-label">活动时间（活动最后一天）<span className="required">*</span></label><input type="date" className="form-input" max={todayStr()} value={formData.activity_end_date} onChange={e => setField('activity_end_date', e.target.value)} /></div>
+          <div className="form-group"><label className="form-label">报销时间 <span className="required">*</span></label><input type="date" className="form-input" max={todayStr()} value={formData.reimbursement_date} onChange={e => setField('reimbursement_date', e.target.value)} /></div>
         </div>
       </div>
 

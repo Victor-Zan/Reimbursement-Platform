@@ -36,8 +36,8 @@ export default function DetailTable({
         unit_price: 0,
         quantity: 1,
         amount: 0,
-        purchase_channel: '',
-        reusable: '',
+        purchase_channel: '网购',
+        reusable: '否',
         source_invoice_item: false,
       },
     ]);

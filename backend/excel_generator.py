@@ -51,9 +51,9 @@ def _fill_header(ws, form_data: ReimbursementFormData):
 
 
 def _fill_footer(ws, form_data: ReimbursementFormData):
-    """填写表尾信息（第23-24行）。"""
-    _write(ws, FOOTER_OFFICER_ROW, 1, form_data.finance_officer)
-    _write(ws, FOOTER_OFFICER_ROW, 5, form_data.activity_leader_opinion)
+    """填写表尾信息（第23-24行，标签+内容写进同一格）。"""
+    _write(ws, FOOTER_OFFICER_ROW, 1, f"经办人/财务负责人：{form_data.finance_officer}")
+    _write(ws, FOOTER_OFFICER_ROW, 5, f"活动负责人意见：{form_data.activity_leader_opinion}")
     _write(ws, FOOTER_ALIPAY_ROW, 4, form_data.alipay_account)
 
 

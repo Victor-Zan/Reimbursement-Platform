@@ -18,18 +18,25 @@ import { MATERIALS } from './config/materials';
 
 const STORAGE_KEY = 'reimbursement_auth';
 
+/** 本地时区的今天（YYYY-MM-DD），避免 toISOString 的 UTC 时区偏差 */
+const todayStr = () => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 function makeEmptyInvoice(): InvoiceSection {
   return {
     buyer_name: '', buyer_tax_id: '', buyer_name_valid: false, buyer_tax_id_valid: false,
     invoice_date: '', invoice_total: 0, reimbursement_amount: 0, handler: '',
-    items: [{ name: '', unit_price: 0, quantity: 1, amount: 0, purchase_channel: '', reusable: '', source_invoice_item: false }],
+    items: [{ name: '', unit_price: 0, quantity: 1, amount: 0, purchase_channel: '网购', reusable: '否', source_invoice_item: false }],
   };
 }
 
 const emptyForm: ReimbursementFormData = {
   type: 'vat',
-  activity_name: '', org_name: '', activity_end_date: '',
-  reimbursement_date: new Date().toISOString().slice(0, 10),
+  activity_name: '', org_name: '', activity_end_date: todayStr(),
+  reimbursement_date: todayStr(),
   invoices: [], actual_total: 0,
   finance_officer: '', activity_leader_opinion: '', alipay_account: '',
 };
@@ -73,7 +80,9 @@ export default function App() {
   const [draftId, setDraftId] = useState<string | null>(null);
 
   const resetAll = useCallback((type: ReimbursementType = 'vat') => {
-    setFormData({ ...emptyForm, type }); setOcrResults([]); setMaterials(emptyMaterials());
+    // 每次新申请都刷新当天日期（跨天后不陈旧）
+    setFormData({ ...emptyForm, type, activity_end_date: todayStr(), reimbursement_date: todayStr() });
+    setOcrResults([]); setMaterials(emptyMaterials());
     setSubmitResult(null); setDraftId(null);
   }, []);
 
@@ -167,8 +176,8 @@ export default function App() {
     const invoices: InvoiceSection[] = results.map(r => ({
       buyer_name: r.buyer_name, buyer_tax_id: r.buyer_tax_id, buyer_name_valid: r.buyer_name_valid, buyer_tax_id_valid: r.buyer_tax_id_valid,
       invoice_date: r.invoice_date, invoice_total: r.invoice_total, reimbursement_amount: 0, handler: '',
-      items: r.items.length ? r.items.map(item => ({ name: item.name, unit_price: item.unit_price, quantity: item.quantity, amount: item.amount, purchase_channel: '', reusable: '', source_invoice_item: true }))
-        : [{ name: '', unit_price: 0, quantity: 1, amount: 0, purchase_channel: '', reusable: '', source_invoice_item: false }],
+      items: r.items.length ? r.items.map(item => ({ name: item.name, unit_price: item.unit_price, quantity: item.quantity, amount: item.amount, purchase_channel: '网购', reusable: '否', source_invoice_item: true }))
+        : [{ name: '', unit_price: 0, quantity: 1, amount: 0, purchase_channel: '网购', reusable: '否', source_invoice_item: false }],
     }));
     let total = 0; for (const inv of invoices) total += inv.reimbursement_amount || 0;
     setFormData(p => ({ ...p, invoices, actual_total: total }));
