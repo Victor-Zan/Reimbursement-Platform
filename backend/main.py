@@ -734,10 +734,16 @@ async def api_list_submissions(user_email: str = ""):
         with _conn.cursor() as _cur:
             if user_email:
                 _cur.execute(
-                    "SELECT zip_filename, reimb_type, created_at FROM submissions "
+                    "SELECT id, parent_id, zip_filename, reimb_type, created_at FROM submissions "
                     "WHERE user_email = %s ORDER BY created_at DESC, id DESC",
                     (user_email,))
-                for fname, rtype, created_at in _cur.fetchall():
+                rows = _cur.fetchall()
+                # 已被重传取代的旧单直接跳过（成员端只显示每条申请的最新版本；
+                # DB 行/批注/ZIP 保留，审核员端仍可见）
+                parent_ids = {r[1] for r in rows if r[1] is not None}
+                for rid, parent_id, fname, rtype, created_at in rows:
+                    if rid in parent_ids:
+                        continue
                     fpath = os.path.join(SUBMISSIONS_DIR, fname)
                     if os.path.isfile(fpath):
                         stat = os.stat(fpath)

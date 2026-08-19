@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MATERIALS, typeLabel, typeColor } from '../config/materials';
 import type { MaterialKey } from '../types';
 
@@ -78,24 +78,33 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
     localStorage.setItem('feedback_last_read', new Date().toISOString());
   };
 
-  useEffect(() => {
+  const closeFeedback = () => { setShowFeedback(false); setFeedbackBadge(0); };
+
+  // 未读红点计算：任何状态改变（通过/打回）都会产生新批注，计入未读
+  const refreshUnread = useCallback(async () => {
     if (!user?.email) return;
-    (async () => {
-      try {
-        const lastRead = localStorage.getItem('feedback_last_read') || '';
-        const r = await fetch(`/api/v1/submissions?user_email=${encodeURIComponent(user.email)}`);
-        const j = await r.json(); let unread = 0;
-        if (j.success) for (const s of j.submissions) {
-          try {
-            const rr = await fetch(`/api/v1/review/annotations/${encodeURIComponent(s.filename)}`);
-            const rj = await rr.json();
-            if (rj.success && rj.review.status !== 'pending' && rj.review.created_at && rj.review.created_at > lastRead) unread++;
-          } catch {}
-        }
-        setFeedbackBadge(unread);
-      } catch {}
-    })();
+    try {
+      const lastRead = localStorage.getItem('feedback_last_read') || '';
+      const r = await fetch(`/api/v1/submissions?user_email=${encodeURIComponent(user.email)}`);
+      const j = await r.json(); let unread = 0;
+      if (j.success) for (const s of j.submissions) {
+        try {
+          const rr = await fetch(`/api/v1/review/annotations/${encodeURIComponent(s.filename)}`);
+          const rj = await rr.json();
+          if (rj.success && rj.review.status !== 'pending' && rj.review.created_at && rj.review.created_at > lastRead) unread++;
+        } catch {}
+      }
+      setFeedbackBadge(unread);
+    } catch {}
   }, [user?.email]);
+
+  useEffect(() => { refreshUnread(); }, [refreshUnread]);
+
+  // 轮询：审核员操作后 30 秒内红点自动出现，无需刷新页面
+  useEffect(() => {
+    const timer = setInterval(refreshUnread, 30000);
+    return () => clearInterval(timer);
+  }, [refreshUnread]);
 
   const handleApply = async () => {
     if (!applyEmail || !applyReason) { alert('请填写邮箱和申请原因'); return; }
@@ -182,7 +191,7 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
 
       {/* 审核反馈弹窗 */}
       {showFeedback && (
-        <div className="modal-overlay" onClick={() => setShowFeedback(false)}>
+        <div className="modal-overlay" onClick={closeFeedback}>
           <div className="modal" onClick={e => e.stopPropagation()}><h2>📬 审核反馈</h2>
             {loading ? <p style={{ textAlign: 'center', padding: 24 }}><span className="spinner" /> 加载中...</p>
              : feedbacks.length === 0 ? <p style={{ textAlign: 'center', padding: 24, color: 'var(--gray-500)' }}>暂无审核反馈</p>
@@ -194,11 +203,11 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
                     const cfg = MATERIALS[k as MaterialKey];
                     return <p key={k}>{cfg ? `${cfg.icon} ${cfg.label}` : k}：{c}</p>;
                   })}{f.form_comment && <p>📋 报销表：{f.form_comment}</p>}</div>
-                  {onReEdit && (<button className="btn btn-primary" style={{ padding: '4px 14px', fontSize: 13, marginTop: 8 }} onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { setShowFeedback(false); const hasMaterial = !!(f.invoice_comment || f.evidence_comment || Object.values(f.material_comments || {}).some(c => c)); const _materials: any = {}; for (const k of Object.keys(j.material_urls || {})) { _materials[k] = { urls: j.material_urls[k], paths: (j.material_paths || {})[k] || [] }; } onReEdit({ ...j.form_data, _reEditStep: hasMaterial ? 1 : 2, _previousZip: f.filename, _materials }); } else alert('未找到原始数据'); } catch { alert('加载失败'); } }}>✏️ 重新编辑</button>)}
+                  {!f.superseded && onReEdit && (<button className="btn btn-primary" style={{ padding: '4px 14px', fontSize: 13, marginTop: 8 }} onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { closeFeedback(); const hasMaterial = !!(f.invoice_comment || f.evidence_comment || Object.values(f.material_comments || {}).some(c => c)); const _materials: any = {}; for (const k of Object.keys(j.material_urls || {})) { _materials[k] = { urls: j.material_urls[k], paths: (j.material_paths || {})[k] || [] }; } onReEdit({ ...j.form_data, _reEditStep: hasMaterial ? 1 : 2, _previousZip: f.filename, _materials }); } else alert('未找到原始数据'); } catch { alert('加载失败'); } }}>✏️ 重新编辑</button>)}
                 </>)}
               </div>
             ))}
-            <button className="btn btn-secondary" onClick={() => setShowFeedback(false)} style={{ marginTop: 16, width: '100%' }}>关闭</button>
+            <button className="btn btn-secondary" onClick={closeFeedback} style={{ marginTop: 16, width: '100%' }}>关闭</button>
           </div>
         </div>
       )}

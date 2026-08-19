@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-interface Props { user: any; onLogout: () => void; }
+interface Props { user: any; }
 
-export default function ReviewerDashboard({ user, onLogout }: Props) {
+export default function ReviewerDashboard({ user }: Props) {
   const navigate = useNavigate();
   const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0, resubmitted: 0 });
   const [resubmittedList, setResubmittedList] = useState<any[]>([]);
@@ -19,7 +19,7 @@ export default function ReviewerDashboard({ user, onLogout }: Props) {
     <div className="home-page">
       <div className="home-header">
         <h1>审核员工作台</h1>
-        <p>{user?.email} | <span className="auth-link" onClick={onLogout}>退出登录</span></p>
+        <p>{user?.email}</p>
       </div>
 
       {/* 统计卡片 */}
@@ -62,7 +62,6 @@ export default function ReviewerDashboard({ user, onLogout }: Props) {
         </div>
         <div className="home-card-stack">
           <div className="home-card home-card-small" onClick={() => navigate('/reviewer/permissions')}><span className="home-card-icon">🔑</span><span className="home-card-label">给予权限</span></div>
-          <div className="home-card home-card-small" onClick={onLogout}><span className="home-card-icon">🚪</span><span className="home-card-label">退出</span></div>
         </div>
       </div>
     </div>

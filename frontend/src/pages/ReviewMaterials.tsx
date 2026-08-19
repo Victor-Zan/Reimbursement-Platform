@@ -125,6 +125,9 @@ export default function ReviewMaterials({ user }: Props) {
   const selectedSubmission = submissions.find(s => s.filename === selected);
   const reimbType: ReimbursementType = (selectedSubmission?.reimb_type as ReimbursementType) || 'vat';
   const accent = typeColor(reimbType);
+  // 审核操作按钮仅待审核/重审显示；ZIP 下载仅已通过显示
+  const canAct = selectedSubmission?.status === 'pending' || selectedSubmission?.status === 'resubmitted';
+  const canDownload = selectedSubmission?.status === 'approved';
 
   // 某材料组的预览文件（兼容旧版后端只返回 invoices/evidences 的响应）
   const filesFor = (key: MaterialKey): PreviewFile[] => {
@@ -298,6 +301,10 @@ export default function ReviewMaterials({ user }: Props) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ margin: 0, fontSize: 16 }}>审核：{selected}</h3>
                 <div style={{ display: 'flex', gap: 6 }}>
+                  {canDownload && (
+                    <a className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: 12, textDecoration: 'none' }}
+                       href={`/api/v1/submissions/download/${encodeURIComponent(selected)}`} download title="下载 ZIP 归档">📥 下载 ZIP</a>
+                  )}
                   <button className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: 12 }} onClick={() => setFullscreen(f => !f)} title="全屏/退出全屏">
                     {fullscreen ? '🗗 退出全屏' : '⛶ 全屏'}
                   </button>
@@ -320,11 +327,13 @@ export default function ReviewMaterials({ user }: Props) {
                : view === 'list' ? renderList() : renderDetail()}
             </div>
 
-            {/* 底部操作栏（任何视图都可见） */}
-            <div style={{ padding: '12px 16px', borderTop: '1px solid var(--gray-200)', display: 'flex', gap: 12, flexShrink: 0 }}>
-              <button className="btn btn-success" onClick={handleApprove} disabled={actionLoading}>✅ 确认无误</button>
-              <button className="btn" style={{ background: 'var(--danger)', color: 'white' }} onClick={handleReject} disabled={actionLoading}>↩ 打回修改</button>
-            </div>
+            {/* 底部操作栏（仅待审核/重审显示） */}
+            {canAct && (
+              <div style={{ padding: '12px 16px', borderTop: '1px solid var(--gray-200)', display: 'flex', gap: 12, flexShrink: 0 }}>
+                <button className="btn btn-success" onClick={handleApprove} disabled={actionLoading}>✅ 确认无误</button>
+                <button className="btn" style={{ background: 'var(--danger)', color: 'white' }} onClick={handleReject} disabled={actionLoading}>↩ 打回修改</button>
+              </div>
+            )}
           </div>
         </div>
       )}
