@@ -2,6 +2,8 @@ import { useState } from 'react';
 import DetailTable from '../components/DetailTable';
 import StepIndicator from '../components/StepIndicator';
 import { ReimbursementFormData, InvoiceSection, DetailRow, ValidationError } from '../types';
+import Icon from '../components/Icon';
+import { useFeedback } from '../components/Feedback';
 
 /** 本地时区的今天（YYYY-MM-DD） */
 const todayStr = () => {
@@ -20,6 +22,7 @@ interface Props {
 }
 
 export default function FillForm({ formData, updateForm, updateInvoice, updateInvoiceItems, onBack, onNext, onSaveDraft, onHome, onAddInvoice, onRemoveInvoice }: Props) {
+  const { toast, confirm } = useFeedback();
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -34,7 +37,7 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
   const isValidAlipay = ALIPAY_MOBILE.test(alipayValue) || ALIPAY_EMAIL.test(alipayValue);
   const alipayError = alipayValue !== '' && !isValidAlipay ? '支付宝账号格式不正确，请输入 11 位手机号或邮箱' : '';
 
-  const handleSave = async () => { setSaving(true); const ok = await onSaveDraft(); setSaving(false); alert(ok ? '草稿已保存' : '保存失败，请重试'); };
+  const handleSave = async () => { setSaving(true); const ok = await onSaveDraft(); setSaving(false); toast(ok ? '草稿已保存' : '保存失败，请重试', ok ? 'success' : 'error'); };
 
   const handleValidate = async () => {
     // 手动添加的票据必须先填总额（现有校验规则按总额约束报销金额）
@@ -89,16 +92,20 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
       {/* 每张发票的区块 */}
       {formData.invoices.map((invoice, invIdx) => (
         <div className="card" key={invIdx}>
-          <h2 className="card-title">📄 发票 {invIdx + 1}
-            {invoice.buyer_name && <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--gray-500)', marginLeft: 12 }}>{invoice.buyer_name}
-              <span className={`badge ${invoice.buyer_name_valid ? 'badge-ok' : 'badge-warn'}`} style={{ marginLeft: 6 }}>{invoice.buyer_name_valid ? '✓' : '⚠'}</span>
-              {invoice.invoice_total > 0 && ` | 总额 ¥${invoice.invoice_total.toFixed(2)}`}
-            </span>}
+          <div className="card-head">
+            <h2 className="card-title"><Icon name="receipt" size={18} /> 发票 {invIdx + 1}
+              {invoice.buyer_name && <span className="card-sub" style={{ marginLeft: 12 }}>{invoice.buyer_name}
+                <span className={`badge ${invoice.buyer_name_valid ? 'badge-ok' : 'badge-warn'}`} style={{ marginLeft: 6 }}><Icon name={invoice.buyer_name_valid ? 'check' : 'alert-triangle'} size={12} /></span>
+                {invoice.invoice_total > 0 && ` | 总额 ¥${invoice.invoice_total.toFixed(2)}`}
+              </span>}
+            </h2>
             {formData.invoices.length > 1 && (
-              <button className="btn btn-secondary" style={{ float: 'right', padding: '2px 10px', fontSize: 12, color: 'var(--danger)' }}
-                onClick={() => { if (window.confirm(`确定删除发票 ${invIdx + 1}？`)) onRemoveInvoice(invIdx); }}>🗑 删除</button>
+              <div className="card-actions">
+                <button className="btn btn-danger btn-sm"
+                  onClick={() => { void (async () => { if (await confirm({ message: `确定删除发票 ${invIdx + 1}？`, tone: 'danger' })) onRemoveInvoice(invIdx); })(); }}><Icon name="trash" size={14} /> 删除</button>
+              </div>
             )}
-          </h2>
+          </div>
 
           {/* 手动添加的票据（非 OCR 来源）：填写开票日期与总额 */}
           {invoice.invoice_total <= 0 && (
@@ -139,12 +146,12 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
       ))}
 
       {/* 添加发票/票据 */}
-      <div className="card" style={{ textAlign: 'center' }}>
-        <button className="btn btn-secondary" onClick={onAddInvoice} style={{ width: '100%' }}>＋ 添加发票/票据</button>
+      <div className="card card--center">
+        <button className="btn btn-secondary" onClick={onAddInvoice}><Icon name="plus" size={16} /> 添加发票/票据</button>
       </div>
 
       {/* 整体合计 */}
-      <div className="card" style={{ textAlign: 'right', fontSize: 16, fontWeight: 700 }}>实际花费合计：¥{formData.actual_total.toFixed(2)}</div>
+      <div className="card card-total" style={{ textAlign: 'right' }}><span>实际花费合计：</span><span className="card-total-num">¥{formData.actual_total.toFixed(2)}</span></div>
 
       {/* 表尾信息 */}
       <div className="card">
@@ -153,35 +160,34 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
           <div className="form-group"><label className="form-label">经办人/财务负责人 <span className="required">*</span></label><input className="form-input" value={formData.finance_officer} onChange={e => setField('finance_officer', e.target.value)} placeholder="填写经办人姓名" /></div>
           <div className="form-group"><label className="form-label">活动负责人意见</label><input className="form-input" value={formData.activity_leader_opinion} onChange={e => setField('activity_leader_opinion', e.target.value)} placeholder="如：同意报销" /></div>
         </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label">支付宝账号 <span className="required">*</span></label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input className={`form-input ${alipayError ? 'error' : ''}`} style={{ flex: 1 }} value={formData.alipay_account} onChange={e => setField('alipay_account', e.target.value)} placeholder="填写收款支付宝账号（手机号或邮箱）" />
-              {alipayValue !== '' && !alipayError && <span className="badge badge-ok">✓</span>}
-            </div>
-            {alipayError && <div className="form-error">{alipayError}</div>}
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">支付宝账号 <span className="required">*</span></label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input className={`form-input ${alipayError ? 'error' : ''}`} style={{ flex: 1 }} value={formData.alipay_account} onChange={e => setField('alipay_account', e.target.value)} placeholder="填写收款支付宝账号（手机号或邮箱）" />
+            {alipayValue !== '' && !alipayError && <span className="badge badge-ok"><Icon name="check" size={12} /></span>}
           </div>
-          <div />
+          {alipayError && <div className="form-error">{alipayError}</div>}
         </div>
       </div>
 
       {/* 校验错误 */}
       {errors.length > 0 && (
-        <div className="card" style={{ border: '1px solid var(--danger)' }}>
-          <h2 className="card-title" style={{ color: 'var(--danger)' }}>⚠ 表单未通过校验</h2>
-          {errors.map((e, i) => (<div key={i} className="alert alert-error">{e.message}</div>))}
+        <div className="alert-panel">
+          <div className="alert-panel-title"><Icon name="alert-triangle" size={16} /> 表单未通过校验</div>
+          <ul>
+            {errors.map((e, i) => (<li key={i}>{e.message}</li>))}
+          </ul>
         </div>
       )}
 
       <div className="btn-actions">
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={onHome}>← 返回首页</button>
-          <button className="btn btn-secondary" onClick={onBack}>← 上一步</button>
+        <div>
+          <button className="btn btn-secondary" onClick={onHome}><Icon name="arrow-left" size={15} /> 返回首页</button>
+          <button className="btn btn-secondary" onClick={onBack}><Icon name="arrow-left" size={15} /> 上一步</button>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={handleSave} disabled={saving}>{saving ? <><span className="spinner" /> 保存中...</> : '💾 保存草稿'}</button>
-          <button className="btn btn-primary" onClick={handleValidate} disabled={validating || hasAmountError || !!alipayError} title={hasAmountError ? '请修正报销金额后再继续' : alipayError ? '请修正支付宝账号格式后再继续' : ''}>{validating ? <><span className="spinner" /> 校验中...</> : '下一步：确认提交 →'}</button>
+        <div>
+          <button className="btn btn-secondary" onClick={handleSave} disabled={saving}>{saving ? <><span className="spinner" /> 保存中...</> : <><Icon name="save" size={15} /> 保存草稿</>}</button>
+          <button className="btn btn-primary" onClick={handleValidate} disabled={validating || hasAmountError || !!alipayError} title={hasAmountError ? '请修正报销金额后再继续' : alipayError ? '请修正支付宝账号格式后再继续' : ''}>{validating ? <><span className="spinner" /> 校验中...</> : <>下一步：确认提交 <Icon name="arrow-right" size={15} /></>}</button>
         </div>
       </div>
     </>

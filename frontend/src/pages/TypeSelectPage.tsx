@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom';
+import type { CSSProperties } from 'react';
 import { OTHER_TYPES, TYPE_CONFIGS } from '../config/materials';
 import type { ReimbursementType } from '../types';
+import Icon from '../components/Icon';
 
 interface Props {
   onEnterType: (type: ReimbursementType) => void;
@@ -10,23 +12,22 @@ export default function TypeSelectPage({ onEnterType }: Props) {
   const navigate = useNavigate();
 
   return (
-    <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 16px' }}>
-      <button className="btn btn-secondary" onClick={() => navigate('/member')} style={{ marginBottom: 16 }}>← 返回首页</button>
-      <h2 style={{ marginBottom: 8 }}>其他类报销</h2>
-      <p style={{ color: 'var(--gray-500)', fontSize: 13, marginBottom: 20 }}>请选择与你的材料相符的报销类型</p>
+    <div>
+      <button className="btn btn-ghost btn-sm" onClick={() => navigate('/member')} style={{ marginBottom: 16 }}><Icon name="arrow-left" size={14} /> 返回首页</button>
+      <div className="page-head">
+        <h1>其他类报销</h1>
+        <p className="page-head-sub">请选择与你的材料相符的报销类型</p>
+      </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="type-grid">
         {OTHER_TYPES.map(t => {
           const c = TYPE_CONFIGS[t];
           return (
-            <div key={t} className="home-card" onClick={() => onEnterType(t)}
-                 style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 20, borderLeft: `4px solid ${c.color}`, cursor: 'pointer' }}>
-              <div className="home-card-icon" style={{ fontSize: 32 }}>{c.icon}</div>
-              <div className="home-card-content" style={{ flex: 1 }}>
-                <h2 style={{ marginBottom: 4 }}>{c.label}</h2>
-                <p style={{ fontSize: 13, color: 'var(--gray-600)', margin: 0 }}>{c.description}</p>
-              </div>
-              <span className="home-card-badge" style={{ background: c.color, color: '#fff' }}>已开放</span>
+            <div key={t} className="type-card" style={{ '--accent': c.color } as CSSProperties} onClick={() => onEnterType(t)}>
+              <div className="type-card-icon"><Icon name={c.icon} size={20} /></div>
+              <h3>{c.label}</h3>
+              <p>{c.description}</p>
+              <div><span className="badge badge-neutral">已开放</span></div>
             </div>
           );
         })}

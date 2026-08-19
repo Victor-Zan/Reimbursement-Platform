@@ -4,6 +4,8 @@ import StepIndicator from '../components/StepIndicator';
 import { ReimbursementFormData } from '../types';
 import { TYPE_MATERIALS, materialFor } from '../config/materials';
 import type { MaterialFilesState } from '../App';
+import Icon from '../components/Icon';
+import { useFeedback } from '../components/Feedback';
 
 interface Props {
   formData: ReimbursementFormData;
@@ -28,6 +30,7 @@ export default function ReviewSubmit({
   onHome,
   onReset,
 }: Props) {
+  const { toast } = useFeedback();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [downloading, setDownloading] = useState(false);
@@ -52,7 +55,7 @@ export default function ReviewSubmit({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      alert('Excel生成失败，请检查后端服务');
+      toast('Excel生成失败，请检查后端服务', 'error');
     } finally {
       setDownloading(false);
     }
@@ -111,23 +114,23 @@ export default function ReviewSubmit({
     setSaving(true);
     const ok = await onSaveDraft();
     setSaving(false);
-    alert(ok ? '草稿已保存' : '保存失败，请重试');
+    toast(ok ? '草稿已保存' : '保存失败，请重试', ok ? 'success' : 'error');
   };
 
   return (
     <>
       <StepIndicator current={3} />
       {submitResult && (
-        <div className="card" style={{ textAlign: 'center', padding: 48 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
-          <h2 style={{ color: 'var(--success)', marginBottom: 8 }}>提交成功！</h2>
-          <p style={{ color: 'var(--gray-600)', marginBottom: 8 }}>{submitResult.message}</p>
+        <div className="success-panel">
+          <div className="success-icon"><Icon name="check-circle" size={36} /></div>
+          <h2>提交成功！</h2>
+          <p>{submitResult.message}</p>
           {submitResult.zip_filename && (
-            <p style={{ fontSize: 13, color: 'var(--gray-500)' }}>
+            <p style={{ fontSize: 13 }}>
               存档文件：{submitResult.zip_filename}
             </p>
           )}
-          <button className="btn btn-primary" onClick={onReset} style={{ marginTop: 24 }}>
+          <button className="btn btn-primary" onClick={onReset}>
             发起新的报销申请
           </button>
         </div>
@@ -136,7 +139,7 @@ export default function ReviewSubmit({
       {!submitResult && (
         <>
           <div className="card">
-            <h2 className="card-title">📋 报销表预览</h2>
+            <h2 className="card-title"><Icon name="clipboard" size={18} /> 报销表预览</h2>
 
             {/* 活动信息 */}
             <div className="preview-section">
@@ -156,19 +159,19 @@ export default function ReviewSubmit({
             {/* 每张发票 */}
             {formData.invoices.map((inv, idx) => (
               <div className="preview-section" key={idx}>
-                <h3>📄 发票 {idx + 1}</h3>
+                <h3><Icon name="receipt" size={14} /> 发票 {idx + 1}</h3>
                 <div className="preview-grid">
                   <span className="label">购买方</span>
                   <span className="value">
                     {inv.buyer_name || '—'}
                     <span className={`badge ${inv.buyer_name_valid ? 'badge-ok' : 'badge-warn'}`} style={{ marginLeft: 6 }}>
-                      {inv.buyer_name_valid ? '✓' : '⚠'}
+                      <Icon name={inv.buyer_name_valid ? 'check' : 'alert-triangle'} size={12} />
                     </span>
                   </span>
                   <span className="label">发票总额</span>
-                  <span className="value">¥{inv.invoice_total.toFixed(2)}</span>
+                  <span className="value value-num">¥{inv.invoice_total.toFixed(2)}</span>
                   <span className="label">报销金额</span>
-                  <span className="value">¥{inv.reimbursement_amount.toFixed(2)}</span>
+                  <span className="value value-num">¥{inv.reimbursement_amount.toFixed(2)}</span>
                   <span className="label">经手人</span>
                   <span className="value">{inv.handler || '—'}</span>
                 </div>
@@ -190,7 +193,7 @@ export default function ReviewSubmit({
               <h3>合计</h3>
               <div className="preview-grid">
                 <span className="label">实际花费总计</span>
-                <span className="value" style={{ fontWeight: 700 }}>
+                <span className="value value-num" style={{ fontWeight: 700 }}>
                   ¥{formData.actual_total.toFixed(2)}
                 </span>
               </div>
@@ -229,8 +232,8 @@ export default function ReviewSubmit({
                 if (entry.existingUrls.length + entry.files.length === 0) return null;
                 return (
                   <div className="file-list" key={k} style={{ marginTop: 8 }}>
-                    {entry.existingUrls.map((_, i) => (<div key={`e_${i}`} className="file-chip">{cfg.icon} {cfg.label}_{i + 1} (原有)</div>))}
-                    {entry.files.map((f, i) => (<div key={i} className="file-chip">{cfg.icon} {f.name}</div>))}
+                    {entry.existingUrls.map((_, i) => (<div key={`e_${i}`} className="file-chip"><Icon name={cfg.icon} size={14} /> {cfg.label}_{i + 1} (原有)</div>))}
+                    {entry.files.map((f, i) => (<div key={i} className="file-chip"><Icon name={cfg.icon} size={14} /> {f.name}</div>))}
                   </div>
                 );
               })}
@@ -238,23 +241,21 @@ export default function ReviewSubmit({
           </div>
 
           {submitError && (
-            <div className="card" style={{ border: '1px solid var(--danger)' }}>
-              <div className="alert alert-error">{submitError}</div>
-            </div>
+            <div className="alert alert-error"><Icon name="alert-triangle" size={15} /> {submitError}</div>
           )}
 
           <div className="btn-actions">
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div>
               <button className="btn btn-secondary" onClick={onHome}>
-                ← 返回首页
+                <Icon name="arrow-left" size={15} /> 返回首页
               </button>
               <button className="btn btn-secondary" onClick={onBack} disabled={submitting}>
-                ← 上一步
+                <Icon name="arrow-left" size={15} /> 上一步
               </button>
             </div>
-            <div style={{ display: 'flex', gap: 12 }}>
+            <div>
               <button className="btn btn-secondary" onClick={handleSave} disabled={saving || submitting}>
-                {saving ? <><span className="spinner" /> 保存中...</> : '💾 保存草稿'}
+                {saving ? <><span className="spinner" /> 保存中...</> : <><Icon name="save" size={15} /> 保存草稿</>}
               </button>
               <button
                 className="btn btn-secondary"
@@ -264,18 +265,18 @@ export default function ReviewSubmit({
                 {downloading ? (
                   <><span className="spinner" /> 生成中...</>
                 ) : (
-                  '📥 预览Excel报销表'
+                  <><Icon name="download" size={15} /> 预览Excel报销表</>
                 )}
               </button>
               <button
-                className="btn btn-success"
+                className="btn btn-gold"
                 onClick={handleSubmit}
                 disabled={submitting}
               >
                 {submitting ? (
                   <><span className="spinner" /> 提交中...</>
                 ) : (
-                  '✅ 确认提交'
+                  <><Icon name="check" size={15} /> 确认提交</>
                 )}
               </button>
             </div>

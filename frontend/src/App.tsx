@@ -15,6 +15,7 @@ import HomePage from './pages/HomePage';
 import TypeSelectPage from './pages/TypeSelectPage';
 import { OCRResult, ReimbursementFormData, InvoiceSection, DetailRow, ReimbursementType, MaterialKey } from './types';
 import { MATERIALS } from './config/materials';
+import { useFeedback } from './components/Feedback';
 
 const STORAGE_KEY = 'reimbursement_auth';
 
@@ -69,6 +70,7 @@ function clearAuth() {
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { confirm } = useFeedback();
   const [auth, setAuth] = useState<{ token: string; user: any } | null>(loadAuth);
 
   // ---- OCR / Form state (shared across wizard steps) ----
@@ -141,10 +143,10 @@ export default function App() {
 
   const promptSaveBeforeHome = useCallback(async () => {
     if (formData.activity_name || formData.org_name) {
-      if (window.confirm('是否将当前进度保存为草稿？\n\n[确定] = 保存\n[取消] = 不保存')) await saveDraft();
+      if (await confirm({ message: '是否将当前进度保存为草稿？\n\n[确定] = 保存\n[取消] = 不保存' })) await saveDraft();
     }
     navigate('/member');
-  }, [formData, saveDraft, navigate]);
+  }, [formData, saveDraft, navigate, confirm]);
 
   const updateForm = (patch: Partial<ReimbursementFormData>) => setFormData(p => ({ ...p, ...patch }));
   const updateInvoice = (invIndex: number, patch: Partial<InvoiceSection>) => {
@@ -219,14 +221,14 @@ export default function App() {
       <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      <Route path="/member" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><HomePage onEnterVat={() => enterType('vat')} onEnterOther={() => navigate('/member/type-select')} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onApplyReviewer={() => navigate('/member/apply')} onReEdit={handleReEdit} /></> : <Navigate to="/login" />} />
-      <Route path="/member/type-select" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><TypeSelectPage onEnterType={enterType} /></> : <Navigate to="/login" />} />
-      <Route path="/member/upload" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><UploadMaterials {...wizardProps} invoiceSectionCount={formData.invoices.length} onNext={() => navigate('/member/fill')} onHome={promptSaveBeforeHome} /></> : <Navigate to="/login" />} />
-      <Route path="/member/fill" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onAddInvoice={addInvoice} onRemoveInvoice={removeInvoice} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></> : <Navigate to="/login" />} />
-      <Route path="/member/review" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ReviewSubmit formData={formData} materials={materials} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></> : <Navigate to="/login" />} />
-      <Route path="/reviewer" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ReviewerDashboard user={auth.user} /></> : <Navigate to="/login" />} />
-      <Route path="/reviewer/materials" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ReviewMaterials user={auth.user} /></> : <Navigate to="/login" />} />
-      <Route path="/reviewer/permissions" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><ManagePermissions /></> : <Navigate to="/login" />} />
+      <Route path="/member" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><HomePage onEnterVat={() => enterType('vat')} onEnterOther={() => navigate('/member/type-select')} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onApplyReviewer={() => navigate('/member/apply')} onReEdit={handleReEdit} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member/type-select" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><TypeSelectPage onEnterType={enterType} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member/upload" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><UploadMaterials {...wizardProps} invoiceSectionCount={formData.invoices.length} onNext={() => navigate('/member/fill')} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member/fill" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onAddInvoice={addInvoice} onRemoveInvoice={removeInvoice} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member/review" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewSubmit formData={formData} materials={materials} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></div></> : <Navigate to="/login" />} />
+      <Route path="/reviewer" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewerDashboard user={auth.user} /></div></> : <Navigate to="/login" />} />
+      <Route path="/reviewer/materials" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewMaterials user={auth.user} /></div></> : <Navigate to="/login" />} />
+      <Route path="/reviewer/permissions" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ManagePermissions /></div></> : <Navigate to="/login" />} />
 
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

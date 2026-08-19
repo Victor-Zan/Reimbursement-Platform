@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Icon from '../components/Icon';
 
 interface Application {
   id: number;
@@ -32,12 +33,14 @@ export default function ManagePermissions() {
   };
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px' }}>
-      <button className="btn btn-secondary" onClick={() => navigate('/reviewer')} style={{ marginBottom: 16 }}>← 返回</button>
-      <h2>🔑 给予权限</h2>
+    <div>
+      <button className="btn btn-ghost btn-sm" onClick={() => navigate('/reviewer')} style={{ marginBottom: 16 }}><Icon name="arrow-left" size={14} /> 返回</button>
+      <div className="page-head">
+        <h1><Icon name="key" size={22} /> 给予权限</h1>
+      </div>
 
-      {loading ? <p style={{ textAlign: 'center', padding: 24 }}><span className="spinner" /> 加载中...</p>
-       : applications.length === 0 ? <p style={{ textAlign: 'center', padding: 24, color: 'var(--gray-500)' }}>暂无申请</p>
+      {loading ? <div className="loading"><span className="spinner" /> 加载中...</div>
+       : applications.length === 0 ? <div className="empty"><div className="empty-icon"><Icon name="key" size={20} /></div>暂无申请</div>
        : (
         <div className="submission-list">
           {applications.map(a => (
@@ -52,7 +55,7 @@ export default function ManagePermissions() {
                 ) : a.status === 'rejected' ? (
                   <span className="badge badge-error">已拒绝</span>
                 ) : (
-                  <button className="btn btn-success" style={{ padding: '4px 14px', fontSize: 13 }} onClick={() => handleApprove(a.id)}>通过</button>
+                  <button className="btn btn-success btn-sm" onClick={() => handleApprove(a.id)}>通过</button>
                 )}
               </div>
             </div>

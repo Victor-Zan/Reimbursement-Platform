@@ -38,6 +38,7 @@ export default function LoginPage({ onLogin }: Props) {
   return (
     <div className="auth-page">
       <div className="auth-card">
+        <img src="/logo.png" alt="CUHK-SZ" className="auth-logo" />
         <h1>报销自动化平台</h1>
         <p className="auth-subtitle">香港中文大学（深圳）</p>
 
@@ -67,7 +68,7 @@ export default function LoginPage({ onLogin }: Props) {
 
           {error && <div className="alert alert-error" style={{ marginBottom: 12 }}>{error}</div>}
 
-          <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%', marginTop: 8 }}>
+          <button type="submit" className="btn btn-primary btn-block" disabled={loading} style={{ marginTop: 8 }}>
             {loading ? <><span className="spinner" /> 登录中...</> : '登录'}
           </button>
         </form>

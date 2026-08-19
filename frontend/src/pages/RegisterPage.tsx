@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useFeedback } from '../components/Feedback';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const { toast } = useFeedback();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -28,7 +30,7 @@ export default function RegisterPage() {
         setError(j.detail || '注册失败');
         return;
       }
-      alert('注册成功！请登录');
+      toast('注册成功！请登录', 'success');
       navigate('/login');
     } catch {
       setError('网络错误');
@@ -40,6 +42,7 @@ export default function RegisterPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
+        <img src="/logo.png" alt="CUHK-SZ" className="auth-logo" />
         <h1>注册账号</h1>
         <p className="auth-subtitle">
           @cuhk.edu.cn → 审核员 &nbsp;|&nbsp; @link.cuhk.edu.cn → 社团成员
@@ -83,7 +86,7 @@ export default function RegisterPage() {
 
           {error && <div className="alert alert-error" style={{ marginBottom: 12 }}>{error}</div>}
 
-          <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%', marginTop: 8 }}>
+          <button type="submit" className="btn btn-primary btn-block" disabled={loading} style={{ marginTop: 8 }}>
             {loading ? <><span className="spinner" /> 注册中...</> : '注册'}
           </button>
         </form>

@@ -1,4 +1,5 @@
 import { DetailRow } from '../types';
+import Icon from './Icon';
 
 interface Props {
   items: DetailRow[];
@@ -51,16 +52,16 @@ export default function DetailTable({
   return (
     <div>
       <div className="table-wrapper">
-        <table>
+        <table className="detail-table">
           <thead>
             <tr>
-              <th style={{ width: '30%' }}>用途/物品名称</th>
-              <th style={{ width: '14%' }}>购买途径</th>
-              <th style={{ width: '12%' }}>可重复利用</th>
-              <th style={{ width: '14%' }}>单价(税前)</th>
-              <th style={{ width: '10%' }}>数量</th>
-              <th style={{ width: '14%' }}>小计</th>
-              {!readonly && <th style={{ width: '6%' }}></th>}
+              <th>用途/物品名称</th>
+              <th>购买途径</th>
+              <th>可重复利用</th>
+              <th>单价(税前)</th>
+              <th>数量</th>
+              <th>小计</th>
+              {!readonly && <th></th>}
             </tr>
           </thead>
           <tbody>
@@ -142,7 +143,7 @@ export default function DetailTable({
                       />
                     )}
                   </td>
-                  <td style={{ fontWeight: 500 }}>
+                  <td className="table-num" style={{ fontWeight: 500 }}>
                     ¥{subtotal.toFixed(2)}
                   </td>
                   {!readonly && (
@@ -153,7 +154,7 @@ export default function DetailTable({
                         disabled={items.length <= 1}
                         title="删除此行"
                       >
-                        ×
+                        <Icon name="x" size={14} />
                       </button>
                     </td>
                   )}
@@ -166,14 +167,14 @@ export default function DetailTable({
 
       {!readonly && (
         <button className="btn-row-add" onClick={addRow}>
-          + 添加一行
+          <Icon name="plus" size={14} /> 添加一行
         </button>
       )}
 
       <div className="table-total">
         实际花费合计：¥{actualTotal.toFixed(2)}
         {invoiceTotal > 0 && (
-          <span style={{ marginLeft: 16, fontSize: 13, color: 'var(--gray-500)' }}>
+          <span className="table-note" style={{ marginLeft: 16 }}>
             （发票总额：¥{invoiceTotal.toFixed(2)}）
           </span>
         )}

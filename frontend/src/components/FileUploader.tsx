@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import Icon from './Icon';
 
 interface Props {
   file: File | null;
@@ -24,6 +25,13 @@ export default function FileUploader({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleClick = () => inputRef.current?.click();
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick();
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
@@ -68,12 +76,15 @@ export default function FileUploader({
     <div>
       <div
         className={`upload-zone ${hasContent ? 'has-file' : ''}`}
+        role="button"
+        tabIndex={0}
         onClick={handleClick}
+        onKeyDown={handleKeyDown}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
         <div className="upload-icon">
-          {hasContent ? '✅' : '📎'}
+          {hasContent ? <Icon name="check" size={22} /> : <Icon name="paperclip" size={22} />}
         </div>
         <div className="upload-text">
           {hasContent
@@ -91,7 +102,7 @@ export default function FileUploader({
         accept={accept}
         multiple={multiple}
         onChange={handleChange}
-        style={{ display: 'none' }}
+        className="visually-hidden"
       />
 
       {/* File chips for multi-upload */}
@@ -99,9 +110,9 @@ export default function FileUploader({
         <div className="file-list">
           {files.map((f, i) => (
             <div key={i} className="file-chip">
-              <span>📷 {f.name}</span>
-              <button className="remove-btn" onClick={() => removeMulti(i)}>
-                ×
+              <span><Icon name="file-text" size={14} /> {f.name}</span>
+              <button className="remove-btn" aria-label="移除" onClick={() => removeMulti(i)}>
+                <Icon name="x" size={14} />
               </button>
             </div>
           ))}
@@ -113,7 +124,7 @@ export default function FileUploader({
         <div className="file-list">
           <div className="file-chip">
             <span>{file.name}</span>
-            <button className="remove-btn" onClick={removeSingle}>×</button>
+            <button className="remove-btn" aria-label="移除" onClick={removeSingle}><Icon name="x" size={14} /></button>
           </div>
         </div>
       )}

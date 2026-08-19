@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import Icon from '../components/Icon';
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -13,12 +14,12 @@ export default function LandingPage() {
 
         <div className="landing-cards">
           <div className="landing-card">
-            <div className="landing-card-icon">👤</div>
+            <div className="landing-card-icon"><Icon name="user" size={20} /></div>
             <h3>社团成员</h3>
             <p>提交报销申请、查看审核进度、管理草稿</p>
           </div>
           <div className="landing-card">
-            <div className="landing-card-icon">🔍</div>
+            <div className="landing-card-icon"><Icon name="search" size={20} /></div>
             <h3>审核员</h3>
             <p>材料审核、批注反馈、权限管理</p>
           </div>

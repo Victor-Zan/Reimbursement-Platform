@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { CSSProperties } from 'react';
 import { TYPE_MATERIALS, materialFor, typeLabel, typeColor, TYPE_CONFIGS } from '../config/materials';
 import type { ReimbursementType, MaterialKey } from '../types';
+import Icon from '../components/Icon';
+import { useFeedback } from '../components/Feedback';
 
 interface Props { user: any; }
 interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; reimb_type?: string; }
@@ -30,13 +33,13 @@ function PdfPreview({ dataUrl, name }: { dataUrl: string; name: string }) {
     return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [dataUrl]);
 
-  if (!url) return <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>PDF 加载中...</div>;
+  if (!url) return <div className="loading">PDF 加载中...</div>;
   return (
-    <div style={{ width: '100%', height: '100%', border: '1px solid var(--gray-200)', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#fff' }}>
+    <div className="pdf-shell" style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#fff' }}>
       <embed src={url} type="application/pdf" style={{ flex: 1, minHeight: 0, width: '100%', border: 'none', display: 'block', background: '#f5f5f5' }} />
-      <div style={{ padding: '6px 10px', borderTop: '1px solid var(--gray-200)', fontSize: 12, color: 'var(--gray-500)', display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
-        <span>📄 {name}</span>
-        <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)' }}>↗ 在新窗口打开</a>
+      <div className="pdf-foot">
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}><Icon name="file-text" size={14} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span></span>
+        <a href={url} target="_blank" rel="noreferrer" className="file-link"><Icon name="external-link" size={14} /> 在新窗口打开</a>
       </div>
     </div>
   );
@@ -49,7 +52,7 @@ function CommentBox({ label, comment, setComment, quickComments }: { label: stri
       <label className="form-label">{label}</label>
       <textarea className="form-input" rows={2} value={comment} onChange={e => setComment(e.target.value)} placeholder="问题描述..." />
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-        {quickComments.map(t => <button key={t} className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => setComment(comment ? comment + '；' + t : t)}>{t}</button>)}
+        {quickComments.map(t => <button key={t} className="btn btn-ghost btn-sm" onClick={() => setComment(comment ? comment + '；' + t : t)}>{t}</button>)}
       </div>
     </div>
   );
@@ -57,6 +60,7 @@ function CommentBox({ label, comment, setComment, quickComments }: { label: stri
 
 export default function ReviewMaterials({ user }: Props) {
   const navigate = useNavigate();
+  const { confirm } = useFeedback();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
@@ -146,8 +150,8 @@ export default function ReviewMaterials({ user }: Props) {
   };
 
   const hasUnsavedComments = !!(invoiceComment || evidenceComment || formComment || Object.values(materialComments).some(c => c && c.trim()));
-  const requestClose = () => {
-    if (hasUnsavedComments && !window.confirm('有未保存的批注，确定退出？')) return;
+  const requestClose = async () => {
+    if (hasUnsavedComments && !(await confirm({ message: '有未保存的批注，确定退出？', tone: 'danger' }))) return;
     setSelected(null); setFullscreen(false); setView('list'); setLightbox(null);
   };
 
@@ -160,7 +164,7 @@ export default function ReviewMaterials({ user }: Props) {
       if (e.key === 'Escape') {
         if (lightbox) setLightbox(null);
         else if (fullscreen) setFullscreen(false);
-        else requestClose();
+        else void requestClose();
       } else if (lightbox) {
         if (e.key === 'ArrowLeft') setLightbox(l => l && { ...l, index: Math.max(0, l.index - 1) });
         if (e.key === 'ArrowRight') setLightbox(l => l && { ...l, index: Math.min(l.files.length - 1, l.index + 1) });
@@ -181,31 +185,36 @@ export default function ReviewMaterials({ user }: Props) {
     return true;
   });
   const formatSize = (b: number) => b < 1024*1024 ? `${(b/1024).toFixed(1)} KB` : `${(b/(1024*1024)).toFixed(1)} MB`;
-  const statusBadge = (s: string) => s === 'approved' ? <span className="badge badge-ok">已通过</span> : s === 'rejected' ? <span className="badge badge-error">已打回</span> : s === 'resubmitted' ? <span className="badge" style={{ background: '#e67e22', color: '#fff' }}>重审</span> : <span className="badge badge-warn">待审核</span>;
-  const typeBadge = (t?: string) => <span className="badge" style={{ background: typeColor(t), color: '#fff' }}>{typeLabel(t)}</span>;
+  const statusBadge = (s: string) => s === 'approved' ? <span className="badge badge-ok">已通过</span> : s === 'rejected' ? <span className="badge badge-error">已打回</span> : s === 'resubmitted' ? <span className="badge badge-purple">重审</span> : <span className="badge badge-warn">待审核</span>;
+  const typeBadge = (t?: string) => (
+    <span className="badge badge-neutral">
+      <span className="dot" style={{ background: typeColor(t) }} />
+      {typeLabel(t)}
+    </span>
+  );
 
   // ---- 审核窗口：清单视图 ----
   const renderList = () => (
     <>
-      <p style={{ fontSize: 13, color: 'var(--gray-500)', margin: '0 0 12px' }}>点击材料查看完整内容与批注</p>
+      <p className="card-sub" style={{ marginBottom: 12 }}>点击材料查看完整内容与批注</p>
       {TYPE_MATERIALS[reimbType].map(key => {
         const cfg = materialFor(reimbType, key);
         const files = filesFor(key);
         const [comment] = commentFor(key);
         return (
-          <div key={key} className="submission-item" style={{ cursor: 'pointer', borderLeft: `4px solid ${accent}`, marginBottom: 8 }}
+          <div key={key} className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer', marginBottom: 8 } as CSSProperties}
                onClick={() => setView(key)}>
-            <div className="draft-info"><strong>{cfg.icon} {cfg.label}</strong><span className="draft-meta">{files.length} 份</span></div>
-            {comment && comment.trim() && <span className="badge badge-ok" title="已填批注">已批注</span>}
-            <span style={{ color: 'var(--gray-400)' }}>→</span>
+            <div className="draft-info"><strong><Icon name={cfg.icon} size={16} /> {cfg.label}</strong><span className="draft-meta">{files.length} 份</span></div>
+            {comment && comment.trim() && <span className="badge badge-gold" title="已填批注">已批注</span>}
+            <Icon name="arrow-right" size={16} />
           </div>
         );
       })}
       {preview?.form && (
-        <div className="submission-item" style={{ cursor: 'pointer', borderLeft: `4px solid ${accent}` }} onClick={() => setView('form')}>
-          <div className="draft-info"><strong>📋 报销表</strong><span className="draft-meta">{preview.form.name}</span></div>
-          {formComment && formComment.trim() && <span className="badge badge-ok" title="已填批注">已批注</span>}
-          <span style={{ color: 'var(--gray-400)' }}>→</span>
+        <div className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer' } as CSSProperties} onClick={() => setView('form')}>
+          <div className="draft-info"><strong><Icon name="clipboard" size={16} /> 报销表</strong><span className="draft-meta">{preview.form.name}</span></div>
+          {formComment && formComment.trim() && <span className="badge badge-gold" title="已填批注">已批注</span>}
+          <Icon name="arrow-right" size={16} />
         </div>
       )}
     </>
@@ -216,9 +225,9 @@ export default function ReviewMaterials({ user }: Props) {
     if (view === 'form') {
       return (
         <div>
-          <button className="btn btn-secondary" onClick={() => setView('list')} style={{ marginBottom: 12 }}>← 返回材料清单</button>
-          <h4 style={{ margin: '0 0 12px', borderLeft: `4px solid ${accent}`, paddingLeft: 8 }}>📋 报销表</h4>
-          {preview?.form && <a href={preview.form.download_url} download className="btn btn-secondary" style={{ marginBottom: 4 }}>📥 下载 {preview.form.name}</a>}
+          <button className="btn btn-ghost btn-sm" onClick={() => setView('list')} style={{ marginBottom: 12 }}><Icon name="arrow-left" size={14} /> 返回材料清单</button>
+          <h4 className="section-title accent-left" style={{ '--accent': accent, paddingLeft: 8, borderLeftWidth: 3 } as CSSProperties}><Icon name="clipboard" size={16} /> 报销表</h4>
+          {preview?.form && <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ marginBottom: 4, textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>}
           <CommentBox label="报销表/拼接信息批注" comment={formComment} setComment={setFormComment} quickComments={FORM_QUICK} />
         </div>
       );
@@ -229,20 +238,20 @@ export default function ReviewMaterials({ user }: Props) {
     const [comment, setComment] = commentFor(key);
     return (
       <div>
-        <button className="btn btn-secondary" onClick={() => setView('list')} style={{ marginBottom: 12 }}>← 返回材料清单</button>
-        <h4 style={{ margin: '0 0 12px', borderLeft: `4px solid ${accent}`, paddingLeft: 8 }}>{cfg.icon} {cfg.label}（{files.length} 份）</h4>
-        {files.length === 0 && <p style={{ color: 'var(--gray-500)', fontSize: 13 }}>该材料无文件</p>}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => setView('list')} style={{ marginBottom: 12 }}><Icon name="arrow-left" size={14} /> 返回材料清单</button>
+        <h4 className="section-title accent-left" style={{ '--accent': accent, paddingLeft: 8, borderLeftWidth: 3 } as CSSProperties}><Icon name={cfg.icon} size={16} /> {cfg.label}（{files.length} 份）</h4>
+        {files.length === 0 && <p className="empty">该材料无文件</p>}
+        <div className="thumb-grid">
           {files.map((f, i) => (
-            <div key={i} style={{ border: '1px solid var(--gray-200)', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: 'var(--gray-50)' }}
+            <div key={i} className="thumb"
                  title={f.name}
                  onClick={() => setLightbox({ files, index: i, label: cfg.label })}>
               {f.data_url.startsWith('data:application/pdf') ? (
-                <div style={{ height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>📄</div>
+                <div className="thumb-pdf"><Icon name="file-text" size={28} /></div>
               ) : (
-                <img src={f.data_url} alt={f.name} style={{ width: '100%', height: 90, objectFit: 'cover', display: 'block' }} />
+                <img src={f.data_url} alt={f.name} />
               )}
-              <div style={{ padding: '4px 6px', fontSize: 11, color: 'var(--gray-600)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</div>
+              <div className="thumb-name">{f.name}</div>
             </div>
           ))}
         </div>
@@ -254,32 +263,35 @@ export default function ReviewMaterials({ user }: Props) {
   const lightboxFile = lightbox ? lightbox.files[lightbox.index] : null;
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px' }}>
-      <button className="btn btn-secondary" onClick={() => navigate('/reviewer')} style={{ marginBottom: 16 }}>← 返回</button>
-      <h2>📋 材料审核</h2>
-      <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select className="form-input" style={{ width: 120 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+    <div>
+      <div className="page-head">
+        <h1>材料审核</h1>
+      </div>
+      <button className="btn btn-ghost btn-sm" onClick={() => navigate('/reviewer')} style={{ marginBottom: 16 }}><Icon name="arrow-left" size={14} /> 返回</button>
+      <div className="filter-bar">
+        <select className="form-input filter-status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           {['全部', '待审核', '已通过', '已打回', '重审'].map(o => <option key={o} value={o}>{o}</option>)}
         </select>
-        <select className="form-input" style={{ width: 140 }} value={typeFilter} onChange={e => setTypeFilter(e.target.value)} title="按报销类型筛选">
+        <select className="form-input filter-type" value={typeFilter} onChange={e => setTypeFilter(e.target.value)} title="按报销类型筛选">
           <option value="全部">全部类型</option>
           {(Object.keys(TYPE_CONFIGS) as ReimbursementType[]).map(t => <option key={t} value={t}>{TYPE_CONFIGS[t].label}</option>)}
         </select>
-        <input type="date" className="form-input" style={{ width: 140, fontSize: 12 }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="起始日期" />
-        <span style={{ color: 'var(--gray-400)', fontSize: 12 }}>至</span>
-        <input type="date" className="form-input" style={{ width: 140, fontSize: 12 }} value={dateTo} onChange={e => setDateTo(e.target.value)} title="截止日期" />
+        <input type="date" className="form-input filter-date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="起始日期" />
+        <span className="filter-sep">至</span>
+        <input type="date" className="form-input filter-date" value={dateTo} onChange={e => setDateTo(e.target.value)} title="截止日期" />
       </div>
 
-      {loading ? <p style={{ textAlign: 'center', padding: 24 }}><span className="spinner" /> 加载中...</p>
-       : filteredSubmissions.length === 0 ? <p style={{ textAlign: 'center', padding: 24, color: 'var(--gray-500)' }}>暂无提交</p>
+      {loading ? <div className="loading"><span className="spinner" /> 加载中...</div>
+       : filteredSubmissions.length === 0 ? <div className="empty"><div className="empty-icon"><Icon name="folder" size={20} /></div>暂无提交</div>
        : (
         <div className="submission-list">
           {filteredSubmissions.map(s => (
-            <div key={s.filename} className={`submission-item ${selected === s.filename ? 'active' : ''}`}
-                 style={{ ...(selected === s.filename ? { border: `2px solid ${accent}` } : {}), borderLeft: `4px solid ${typeColor(s.reimb_type)}` }}
+            <div key={s.filename}
+                 className={`submission-item ${selected === s.filename ? 'is-selected' : 'accent-left'}`}
+                 style={{ '--accent': typeColor(s.reimb_type) } as CSSProperties}
                  onClick={() => openReview(s.filename)}>
               <div className="draft-info">
-                <strong>📦 {s.filename}</strong>
+                <strong><Icon name="archive" size={16} /> {s.filename}</strong>
                 <span className="draft-meta">{formatSize(s.size)} · {s.modified.slice(0,19).replace('T',' ')}{s.reviewer_email ? ` · 审核人：${s.reviewer_email}` : ''}</span>
               </div>
               {typeBadge(s.reimb_type)}
@@ -291,47 +303,47 @@ export default function ReviewMaterials({ user }: Props) {
 
       {/* 审核窗口（默认 80% 视口，可全屏） */}
       {selected && (
-        <div className="modal-overlay" onClick={() => { if (!fullscreen) requestClose(); }}>
-          <div className="modal" onClick={e => e.stopPropagation()}
-               style={fullscreen
-                 ? { width: '100vw', height: '100vh', maxHeight: '100vh', borderRadius: 0, padding: 0, display: 'flex', flexDirection: 'column' }
-                 : { width: '80vw', height: '80vh', maxHeight: '80vh', padding: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-overlay" onClick={() => { if (!fullscreen) void requestClose(); }}>
+          <div className={`modal modal-review${fullscreen ? ' modal-review--full' : ''}`} onClick={e => e.stopPropagation()}>
             {/* 头部：标题 + 类型/状态 + 窗口控制 */}
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--gray-200)', flexShrink: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, fontSize: 16 }}>审核：{selected}</h3>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {canDownload && (
-                    <a className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: 12, textDecoration: 'none' }}
-                       href={`/api/v1/submissions/download/${encodeURIComponent(selected)}`} download title="下载 ZIP 归档">📥 下载 ZIP</a>
+            <div className="modal-head">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+                <h3 className="modal-title" style={{ fontSize: 16 }}>审核：{selected}</h3>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {typeBadge(reimbType)}
+                  {review && review.status !== 'pending' && (
+                    <span className={`badge ${review.status === 'approved' ? 'badge-ok' : review.status === 'rejected' ? 'badge-error' : 'badge-purple'}`}>
+                      {review.status === 'approved' ? '已通过' : review.status === 'rejected' ? '已打回' : '重审'} · 审核人：{review.reviewer_email}
+                    </span>
                   )}
-                  <button className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: 12 }} onClick={() => setFullscreen(f => !f)} title="全屏/退出全屏">
-                    {fullscreen ? '🗗 退出全屏' : '⛶ 全屏'}
-                  </button>
-                  <button className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: 12 }} onClick={requestClose} title="退出">✕ 退出</button>
                 </div>
               </div>
-              <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                {typeBadge(reimbType)}
-                {review && review.status !== 'pending' && (
-                  <span className={`badge ${review.status === 'approved' ? 'badge-ok' : review.status === 'rejected' ? 'badge-error' : 'badge-warn'}`}>
-                    {review.status === 'approved' ? '已通过' : review.status === 'rejected' ? '已打回' : '重审'} · 审核人：{review.reviewer_email}
-                  </span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {canDownload && (
+                  <a className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}
+                     href={`/api/v1/submissions/download/${encodeURIComponent(selected)}`} download title="下载 ZIP 归档"><Icon name="download" size={14} /> 下载 ZIP</a>
                 )}
+                <button className="btn btn-secondary btn-sm" onClick={() => setFullscreen(f => !f)} title="全屏/退出全屏">
+                  <Icon name={fullscreen ? 'minimize' : 'maximize'} size={14} /> {fullscreen ? '退出全屏' : '全屏'}
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => void requestClose()} title="退出"><Icon name="x" size={14} /> 退出</button>
               </div>
             </div>
 
             {/* 主体：材料清单 / 材料详情 */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-              {previewLoading ? <p style={{ textAlign: 'center', padding: 24 }}><span className="spinner" /> 加载预览...</p>
+            <div className="modal-body">
+              {previewLoading ? <div className="loading"><span className="spinner" /> 加载预览...</div>
                : view === 'list' ? renderList() : renderDetail()}
             </div>
 
             {/* 底部操作栏（仅待审核/重审显示） */}
             {canAct && (
-              <div style={{ padding: '12px 16px', borderTop: '1px solid var(--gray-200)', display: 'flex', gap: 12, flexShrink: 0 }}>
-                <button className="btn btn-success" onClick={handleApprove} disabled={actionLoading}>✅ 确认无误</button>
-                <button className="btn" style={{ background: 'var(--danger)', color: 'white' }} onClick={handleReject} disabled={actionLoading}>↩ 打回修改</button>
+              <div className="modal-foot">
+                <span />
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <button className="btn btn-success" onClick={handleApprove} disabled={actionLoading}><Icon name="check" size={15} /> 确认无误</button>
+                  <button className="btn btn-danger" onClick={handleReject} disabled={actionLoading}><Icon name="rotate-ccw" size={15} /> 打回修改</button>
+                </div>
               </div>
             )}
           </div>
@@ -340,17 +352,16 @@ export default function ReviewMaterials({ user }: Props) {
 
       {/* 放大查看（缩略图点击后） */}
       {lightbox && lightboxFile && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', flexDirection: 'column' }}
-             onClick={() => setLightbox(null)}>
-          <div style={{ padding: '10px 16px', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-            <span style={{ fontSize: 13 }}>{lightbox.label} · {lightbox.index + 1} / {lightbox.files.length} · {lightboxFile.name}</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: 12 }} disabled={lightbox.index === 0} onClick={() => setLightbox(l => l && { ...l, index: l.index - 1 })}>← 上一个</button>
-              <button className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: 12 }} disabled={lightbox.index >= lightbox.files.length - 1} onClick={() => setLightbox(l => l && { ...l, index: l.index + 1 })}>下一个 →</button>
-              <button className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: 12 }} onClick={() => setLightbox(null)}>✕ 关闭</button>
+        <div className="lightbox" onClick={() => setLightbox(null)}>
+          <div className="lightbox-bar" onClick={e => e.stopPropagation()}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lightbox.label} · {lightbox.index + 1} / {lightbox.files.length} · {lightboxFile.name}</span>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button className="btn btn-secondary btn-sm" disabled={lightbox.index === 0} onClick={() => setLightbox(l => l && { ...l, index: l.index - 1 })}><Icon name="arrow-left" size={14} /> 上一个</button>
+              <button className="btn btn-secondary btn-sm" disabled={lightbox.index >= lightbox.files.length - 1} onClick={() => setLightbox(l => l && { ...l, index: l.index + 1 })}>下一个 <Icon name="arrow-right" size={14} /></button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setLightbox(null)}><Icon name="x" size={14} /> 关闭</button>
             </div>
           </div>
-          <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }} onClick={e => e.stopPropagation()}>
+          <div className="lightbox-body" onClick={e => e.stopPropagation()}>
             {lightboxFile.data_url.startsWith('data:application/pdf') ? (
               <div style={{ width: '100%', height: '100%' }}>
                 <PdfPreview dataUrl={lightboxFile.data_url} name={lightboxFile.name} />
