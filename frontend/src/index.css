@@ -270,7 +270,7 @@ img {
 }
 
 .top-nav-logo-img {
-  height: 34px;
+  height: 28px;
   width: auto;
   flex-shrink: 0;
 }
@@ -1565,7 +1565,7 @@ td input.error {
   position: absolute;
   top: 24px;
   left: 24px;
-  height: 40px;
+  height: 48px;
   width: auto;
 }
 
@@ -1704,7 +1704,7 @@ td input.error {
 }
 
 .auth-logo {
-  height: 52px;
+  height: 64px;
   width: auto;
   margin: 0 auto 16px;
 }

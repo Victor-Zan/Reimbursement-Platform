@@ -38,7 +38,7 @@ export default function LoginPage({ onLogin }: Props) {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <img src="/logo.png" alt="CUHK-SZ" className="auth-logo" />
+        <img src="/logo-large.png" alt="CUHK-SZ" className="auth-logo" />
         <h1>报销自动化平台</h1>
         <p className="auth-subtitle">香港中文大学（深圳）</p>
 

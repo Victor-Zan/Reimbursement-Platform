@@ -6,7 +6,7 @@ export default function LandingPage() {
 
   return (
     <div className="landing-page">
-      <img src="/logo.png" alt="CUHK-SZ" className="landing-logo" />
+      <img src="/logo-large.png" alt="CUHK-SZ" className="landing-logo" />
       <div className="landing-hero">
         <div className="landing-badge">香港中文大学（深圳）</div>
         <h1>报销自动化平台</h1>

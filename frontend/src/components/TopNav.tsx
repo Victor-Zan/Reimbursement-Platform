@@ -10,7 +10,7 @@ export default function TopNav({ user, onLogout }: Props) {
     <nav className="top-nav">
       <div className="top-nav-inner">
         <div className="top-nav-left">
-          <img src="/logo.png" alt="CUHK-SZ" className="top-nav-logo-img" />
+          <img src="/logo-horizontal.png" alt="CUHK-SZ" className="top-nav-logo-img" />
           <span className="top-nav-title">报销自动化平台</span>
         </div>
         <div className="top-nav-right">

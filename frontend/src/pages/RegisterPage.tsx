@@ -42,7 +42,7 @@ export default function RegisterPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <img src="/logo.png" alt="CUHK-SZ" className="auth-logo" />
+        <img src="/logo-large.png" alt="CUHK-SZ" className="auth-logo" />
         <h1>注册账号</h1>
         <p className="auth-subtitle">
           @cuhk.edu.cn → 审核员 &nbsp;|&nbsp; @link.cuhk.edu.cn → 社团成员
