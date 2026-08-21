@@ -33,6 +33,17 @@ export default function RoleSelectPage({ user, onLogout }: Props) {
             <h3>审核员登录</h3>
             <p>进入材料审核与管理</p>
           </div>
+
+          {user?.is_admin && (
+            <div
+              className="role-card"
+              onClick={() => navigate('/admin')}
+            >
+              <div className="role-card-icon"><Icon name="shield" size={22} /></div>
+              <h3>管理员登录</h3>
+              <p>进入权限管理与申诉处理</p>
+            </div>
+          )}
         </div>
 
         <button

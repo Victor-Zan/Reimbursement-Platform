@@ -7,7 +7,10 @@ import RoleSelectPage from './pages/RoleSelectPage';
 import TopNav from './components/TopNav';
 import ReviewerDashboard from './pages/ReviewerDashboard';
 import ReviewMaterials from './pages/ReviewMaterials';
-import ManagePermissions from './pages/ManagePermissions';
+import AdminDashboard from './pages/AdminDashboard';
+import AdminPermissions from './pages/AdminPermissions';
+import AdminAppeals from './pages/AdminAppeals';
+import MemberAppeals from './pages/MemberAppeals';
 import UploadMaterials from './pages/UploadMaterials';
 import FillForm from './pages/FillForm';
 import ReviewSubmit from './pages/ReviewSubmit';
@@ -102,6 +105,8 @@ export default function App() {
 
     if (user.can_choose_role) {
       navigate('/select-role');
+    } else if (user.is_admin) {
+      navigate('/admin');
     } else if (user.is_reviewer) {
       navigate('/reviewer');
     } else {
@@ -221,14 +226,18 @@ export default function App() {
       <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      <Route path="/member" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><HomePage onEnterVat={() => enterType('vat')} onEnterOther={() => navigate('/member/type-select')} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onApplyReviewer={() => navigate('/member/apply')} onReEdit={handleReEdit} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><HomePage onEnterVat={() => enterType('vat')} onEnterOther={() => navigate('/member/type-select')} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onReEdit={handleReEdit} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member/appeals" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><MemberAppeals user={auth.user} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/type-select" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><TypeSelectPage onEnterType={enterType} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/upload" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><UploadMaterials {...wizardProps} invoiceSectionCount={formData.invoices.length} onNext={() => navigate('/member/fill')} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/fill" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onAddInvoice={addInvoice} onRemoveInvoice={removeInvoice} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/review" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewSubmit formData={formData} materials={materials} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></div></> : <Navigate to="/login" />} />
       <Route path="/reviewer" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewerDashboard user={auth.user} /></div></> : <Navigate to="/login" />} />
       <Route path="/reviewer/materials" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewMaterials user={auth.user} /></div></> : <Navigate to="/login" />} />
-      <Route path="/reviewer/permissions" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ManagePermissions /></div></> : <Navigate to="/login" />} />
+
+      <Route path="/admin" element={auth?.user?.is_admin ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><AdminDashboard user={auth.user} /></div></> : <Navigate to="/login" />} />
+      <Route path="/admin/permissions" element={auth?.user?.is_admin ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><AdminPermissions /></div></> : <Navigate to="/login" />} />
+      <Route path="/admin/appeals" element={auth?.user?.is_admin ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><AdminAppeals user={auth.user} /></div></> : <Navigate to="/login" />} />
 
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

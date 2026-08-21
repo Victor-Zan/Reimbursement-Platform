@@ -58,6 +58,13 @@ def init_db():
                     created_at    TIMESTAMP DEFAULT NOW()
                 );
             """)
+            # 兼容旧表：管理员角色列
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
 
             # ---- submissions 主表（由旧 submissions_data 原位 rename 演进）----
             # 1. 旧表重命名（必须在 CREATE TABLE 之前，幂等双条件）
@@ -162,6 +169,13 @@ def init_db():
                 EXCEPTION WHEN duplicate_column THEN NULL;
                 END $$;
             """)
+            # 兼容旧表：管理员处理标记（管理员对申诉的最终决定）
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE review_annotations ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS reviewer_applications (
@@ -170,6 +184,28 @@ def init_db():
                     reason     TEXT DEFAULT '',
                     status     VARCHAR(20) DEFAULT 'pending',
                     created_at TIMESTAMP DEFAULT NOW()
+                );
+            """)
+            # 兼容旧表：申请的角色（审核员/管理员）
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE reviewer_applications ADD COLUMN role VARCHAR(20) DEFAULT 'reviewer';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
+
+            # ---- 意见反馈（申诉）表：成员对打回结果不认可时提交，管理员裁决 ----
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS appeals (
+                    id             SERIAL PRIMARY KEY,
+                    submission_id  INTEGER REFERENCES submissions(id),
+                    submission_zip VARCHAR(500) NOT NULL,
+                    user_email     VARCHAR(255) DEFAULT '',
+                    reason         TEXT DEFAULT '',
+                    status         VARCHAR(20) DEFAULT 'pending',
+                    admin_email    VARCHAR(255) DEFAULT '',
+                    created_at     TIMESTAMP DEFAULT NOW(),
+                    updated_at     TIMESTAMP DEFAULT NOW()
                 );
             """)
 
@@ -188,6 +224,9 @@ def init_db():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_submissions_parent_id ON submissions(parent_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_review_annotations_submission_id ON review_annotations(submission_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_review_annotations_submission_zip ON review_annotations(submission_zip)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_appeals_submission_id ON appeals(submission_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_appeals_user_email ON appeals(user_email)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_appeals_status ON appeals(status)")
 
             # 6. 孤儿行回填（幂等）：DB 成为唯一行来源，保证改造后不丢行
             # 6a. 仅存在于批注表的 zip
@@ -228,6 +267,12 @@ def init_db():
                 UPDATE review_annotations ra SET submission_id = s.id
                 FROM submissions s
                 WHERE s.zip_filename = ra.submission_zip AND ra.submission_id IS NULL;
+            """)
+            # 7c2. 申诉挂接 submission_id（只补 NULL 行）
+            cur.execute("""
+                UPDATE appeals a SET submission_id = s.id
+                FROM submissions s
+                WHERE s.zip_filename = a.submission_zip AND a.submission_id IS NULL;
             """)
             # 7d. status 冗余：仅对"有批注"的行用最新批注状态收敛（无批注行不动，保护 resubmitted）
             cur.execute("""

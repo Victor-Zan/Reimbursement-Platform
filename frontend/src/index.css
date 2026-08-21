@@ -2063,6 +2063,54 @@ td input.error {
   flex-wrap: wrap;
 }
 
+/* ---- 27b. 意见反馈多选清单 ---- */
+.appeal-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.form-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease);
+}
+
+.form-check:hover { border-color: var(--primary-line); }
+
+.form-check.is-disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.form-check-input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+
+.form-check-input:focus-visible {
+  outline: 3px solid rgba(104, 42, 122, .18);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.form-check-label {
+  font-size: var(--fs-14);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- 28. Success Panel ---- */
 .success-panel {
   text-align: center;

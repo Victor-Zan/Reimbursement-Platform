@@ -43,7 +43,7 @@ def register(email: str, password: str) -> dict:
             return {
                 "success": True,
                 "token": token,
-                "user": {"id": user_id, "email": email, "is_reviewer": is_reviewer},
+                "user": {"id": user_id, "email": email, "is_reviewer": is_reviewer, "is_admin": False},
             }
     finally:
         conn.close()
@@ -51,22 +51,31 @@ def register(email: str, password: str) -> dict:
 
 def login(email: str, password: str) -> dict:
     """登录验证。"""
+    # 硬编码管理员账号（暂不建库行）：admin / admin123
+    if email == "admin":
+        if password != "admin123":
+            return {"success": False, "error": "密码错误"}
+        return {
+            "success": True,
+            "token": create_token("admin", 0, False, True),
+            "user": {"id": 0, "email": "admin", "is_reviewer": False, "is_admin": True, "can_choose_role": False},
+        }
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, email, password_hash, is_reviewer FROM users WHERE email = %s",
+                "SELECT id, email, password_hash, is_reviewer, is_admin FROM users WHERE email = %s",
                 (email,),
             )
             row = cur.fetchone()
             if not row:
                 return {"success": False, "error": "邮箱未注册"}
 
-            user_id, email, pw_hash, is_reviewer = row
+            user_id, email, pw_hash, is_reviewer, is_admin = row
             if not verify_password(password, pw_hash):
                 return {"success": False, "error": "密码错误"}
 
-            token = create_token(email, user_id, is_reviewer)
+            token = create_token(email, user_id, is_reviewer, is_admin)
             # 判断是否有双重身份
             is_link = get_email_domain(email) == "@link.cuhk.edu.cn"
             return {
@@ -76,7 +85,8 @@ def login(email: str, password: str) -> dict:
                     "id": user_id,
                     "email": email,
                     "is_reviewer": is_reviewer,
-                    "can_choose_role": is_link and is_reviewer,  # 双重身份
+                    "is_admin": is_admin,
+                    "can_choose_role": (is_link and is_reviewer) or (is_admin and is_reviewer),  # 双重身份
                 },
             }
     finally:
@@ -89,13 +99,13 @@ def get_user_by_id(user_id: int) -> dict | None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, email, is_reviewer FROM users WHERE id = %s",
+                "SELECT id, email, is_reviewer, is_admin FROM users WHERE id = %s",
                 (user_id,),
             )
             row = cur.fetchone()
             if not row:
                 return None
-            return {"id": row[0], "email": row[1], "is_reviewer": row[2]}
+            return {"id": row[0], "email": row[1], "is_reviewer": row[2], "is_admin": row[3]}
     finally:
         conn.close()
 
@@ -108,6 +118,21 @@ def set_reviewer_status(email: str, is_reviewer: bool) -> bool:
             cur.execute(
                 "UPDATE users SET is_reviewer = %s WHERE email = %s",
                 (is_reviewer, email),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_admin_status(email: str, is_admin: bool) -> bool:
+    """更新用户的管理员状态。"""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET is_admin = %s WHERE email = %s",
+                (is_admin, email),
             )
             conn.commit()
             return cur.rowcount > 0

@@ -61,9 +61,6 @@ export default function ReviewerDashboard({ user }: Props) {
           <div className="home-card-icon"><Icon name="clipboard" size={28} /></div>
           <div className="home-card-content"><h2>材料审核</h2><p>查看和审核已提交的报销申请</p><span className="home-card-badge">审核</span></div>
         </div>
-        <div className="home-card-stack">
-          <div className="home-card home-card-small" onClick={() => navigate('/reviewer/permissions')}><span className="home-card-icon"><Icon name="key" size={20} /></span><span className="home-card-label">给予权限</span></div>
-        </div>
       </div>
     </div>
   );

@@ -24,12 +24,13 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
 
-def create_token(email: str, user_id: int, is_reviewer: bool) -> str:
+def create_token(email: str, user_id: int, is_reviewer: bool, is_admin: bool = False) -> str:
     """签发 JWT token。"""
     payload = {
         "sub": email,
         "user_id": user_id,
         "is_reviewer": is_reviewer,
+        "is_admin": is_admin,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS),
         "iat": datetime.now(timezone.utc),
     }

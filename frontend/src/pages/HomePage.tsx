@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MATERIALS, typeLabel, typeColor } from '../config/materials';
 import type { MaterialKey } from '../types';
 import Icon from '../components/Icon';
@@ -10,14 +11,14 @@ interface Props {
   onOpenDrafts: () => void;
   onOpenHistory: () => void;
   user?: any;
-  onApplyReviewer?: () => void;
   onReEdit?: (data: any) => void;
 }
 
 interface DraftSummary { id: string; activity_name: string; org_name: string; current_step: number; updated_at: string; }
-interface SubmissionFile { filename: string; size: number; modified: string; reimb_type?: string; }
+interface SubmissionFile { filename: string; size: number; modified: string; reimb_type?: string; status?: string; }
 
-export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpenHistory, user, onApplyReviewer, onReEdit }: Props) {
+export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpenHistory, user, onReEdit }: Props) {
+  const navigate = useNavigate();
   const { toast, confirm } = useFeedback();
   const [draftCount, setDraftCount] = useState(0);
   const [showDrafts, setShowDrafts] = useState(false);
@@ -34,6 +35,7 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
   const [showApply, setShowApply] = useState(false);
   const [applyEmail, setApplyEmail] = useState(user?.email || '');
   const [applyReason, setApplyReason] = useState('');
+  const [applyRole, setApplyRole] = useState('reviewer');
   const [memberStats, setMemberStats] = useState({ monthly: 0, pending: 0, approved: 0 });
 
   const loadMemberStats = async () => {
@@ -111,8 +113,8 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
 
   const handleApply = async () => {
     if (!applyEmail || !applyReason) { toast('请填写邮箱和申请原因', 'warn'); return; }
-    await fetch('/api/v1/reviewer/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: applyEmail, reason: applyReason }) });
-    toast('申请已提交', 'success'); setShowApply(false);
+    await fetch('/api/v1/reviewer/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: applyEmail, reason: applyReason, role: applyRole }) });
+    toast('申请已提交', 'success'); setShowApply(false); setApplyReason(''); setApplyRole('reviewer');
   };
 
   const formatSize = (b: number) => b < 1024*1024 ? `${(b/1024).toFixed(1)} KB` : `${(b/(1024*1024)).toFixed(1)} MB`;
@@ -152,7 +154,7 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
           <div className="home-card home-card-small" onClick={handleOpenDrafts}><span className="home-card-icon"><Icon name="edit" size={20} /></span><span className="home-card-label">我的草稿</span>{draftCount > 0 && <span className="home-card-count">{draftCount} 条</span>}</div>
           <div className="home-card home-card-small" onClick={handleOpenHistory}><span className="home-card-icon"><Icon name="folder" size={20} /></span><span className="home-card-label">查看历史提交</span></div>
           <div className="home-card home-card-small" onClick={handleOpenFeedback}><span className="home-card-icon"><Icon name="mail" size={20} /></span><span className="home-card-label">审核反馈</span>{feedbackBadge > 0 && <span className="home-card-count home-card-count--danger">{feedbackBadge}</span>}</div>
-          {onApplyReviewer && (<div className="home-card home-card-small" onClick={() => setShowApply(true)}><span className="home-card-icon"><Icon name="key" size={20} /></span><span className="home-card-label">申请成为审核员</span></div>)}
+          <div className="home-card home-card-small" onClick={() => setShowApply(true)}><span className="home-card-icon"><Icon name="key" size={20} /></span><span className="home-card-label">申请权限</span></div>
         </div>
       </div>
 
@@ -214,11 +216,15 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
               <div key={i} className="feedback-item">
                 <div className="feedback-item-head"><strong><Icon name="archive" size={16} /> {f.filename}</strong><span className={`badge ${f.status === 'approved' ? 'badge-ok' : 'badge-error'}`}>{f.status === 'approved' ? '已通过' : '已打回'}</span></div>
                 {f.status === 'rejected' && (<>
+                  {f.is_admin && <span className="badge badge-purple" style={{ alignSelf: 'flex-start' }}><Icon name="shield" size={12} /> 管理员批注</span>}
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{f.invoice_comment && <p><Icon name="receipt" size={14} /> 发票：{f.invoice_comment}</p>}{f.evidence_comment && <p><Icon name="camera" size={14} /> 凭证：{f.evidence_comment}</p>}{Object.entries((f.material_comments || {}) as Record<string, string>).filter(([, c]) => c).map(([k, c]) => {
                     const cfg = MATERIALS[k as MaterialKey];
                     return <p key={k}>{cfg ? <><Icon name={cfg.icon} size={14} /> {cfg.label}</> : k}：{c}</p>;
                   })}{f.form_comment && <p><Icon name="clipboard" size={14} /> 报销表：{f.form_comment}</p>}</div>
-                  {!f.superseded && onReEdit && (<button className="btn btn-primary btn-sm" style={{ marginTop: 8 }} onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { closeFeedback(); const hasMaterial = !!(f.invoice_comment || f.evidence_comment || Object.values(f.material_comments || {}).some(c => c)); const _materials: any = {}; for (const k of Object.keys(j.material_urls || {})) { _materials[k] = { urls: j.material_urls[k], paths: (j.material_paths || {})[k] || [] }; } onReEdit({ ...j.form_data, _reEditStep: hasMaterial ? 1 : 2, _previousZip: f.filename, _materials }); } else toast('未找到原始数据', 'error'); } catch { toast('加载失败', 'error'); } }}><Icon name="edit" size={14} /> 重新编辑</button>)}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    {onReEdit && (<button className="btn btn-primary btn-sm" onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { closeFeedback(); const hasMaterial = !!(f.invoice_comment || f.evidence_comment || Object.values(f.material_comments || {}).some(c => c)); const _materials: any = {}; for (const k of Object.keys(j.material_urls || {})) { _materials[k] = { urls: j.material_urls[k], paths: (j.material_paths || {})[k] || [] }; } onReEdit({ ...j.form_data, _reEditStep: hasMaterial ? 1 : 2, _previousZip: f.filename, _materials }); } else toast('未找到原始数据', 'error'); } catch { toast('加载失败', 'error'); } }}><Icon name="edit" size={14} /> 重新编辑</button>)}
+                    <button className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); closeFeedback(); navigate('/member/appeals'); }}><Icon name="send" size={14} /> 意见反馈</button>
+                  </div>
                 </>)}
               </div>
             ))}
@@ -231,8 +237,14 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
       {showApply && (
         <div className="modal-overlay" onClick={() => setShowApply(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-head"><h2 className="modal-title"><Icon name="key" size={18} /> 申请成为审核员</h2></div>
+            <div className="modal-head"><h2 className="modal-title"><Icon name="key" size={18} /> 申请权限</h2></div>
             <div className="form-group"><label className="form-label">邮箱</label><input className="form-input" value={applyEmail} onChange={e => setApplyEmail(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">申请角色</label>
+              <select className="form-input" value={applyRole} onChange={e => setApplyRole(e.target.value)}>
+                <option value="reviewer">审核员</option>
+                <option value="admin">管理员</option>
+              </select>
+            </div>
             <div className="form-group"><label className="form-label">申请原因</label><textarea className="form-input" rows={3} value={applyReason} onChange={e => setApplyReason(e.target.value)} placeholder="请简述申请原因..." /></div>
             <div className="modal-foot"><button className="btn btn-primary" onClick={handleApply}>提交申请</button><button className="btn btn-secondary" onClick={() => setShowApply(false)}>取消</button></div>
           </div>

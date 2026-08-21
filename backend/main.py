@@ -467,6 +467,9 @@ async def api_me(token: str = ""):
     payload = decode_token(token)
     if not payload:
         raise HTTPException(401, "无效的 token")
+    # 硬编码管理员账号（无库行，user_id=0）
+    if payload.get("user_id") == 0:
+        return {"success": True, "user": {"id": 0, "email": "admin", "is_reviewer": False, "is_admin": True}}
     from user_service import get_user_by_id
     user = get_user_by_id(payload["user_id"])
     if not user:
@@ -596,11 +599,11 @@ async def api_reject(data: dict):
 
 @app.post("/api/v1/reviewer/apply")
 async def api_apply_reviewer(data: dict):
-    """提交审核员申请。"""
+    """提交权限申请（审核员/管理员）。"""
     from application_service import submit_application
-    result = submit_application(data.get("email", ""), data.get("reason", ""))
+    result = submit_application(data.get("email", ""), data.get("reason", ""), data.get("role", "reviewer"))
     if not result["success"]:
-        raise HTTPException(400, "申请失败")
+        raise HTTPException(400, result.get("error", "申请失败"))
     return result
 
 
@@ -613,9 +616,55 @@ async def api_list_applications():
 
 @app.post("/api/v1/reviewer/applications/{app_id}/approve")
 async def api_approve_application(app_id: int):
-    """批准审核员申请。"""
+    """批准权限申请（按申请的角色授予审核员或管理员权限）。"""
     from application_service import approve_application
     result = approve_application(app_id)
+    if not result.get("success"):
+        raise HTTPException(400, result.get("error", "操作失败"))
+    return result
+
+
+# ---- 意见反馈（申诉）API ----
+
+@app.post("/api/v1/appeals")
+async def api_create_appeals(data: dict):
+    """成员提交意见反馈（可多选已打回提交，共享一条原因）。"""
+    from appeal_service import create_appeals
+    result = create_appeals(
+        data.get("user_email", ""),
+        data.get("submission_zip", []) or [],
+        data.get("reason", ""),
+    )
+    if not result.get("success"):
+        raise HTTPException(400, result.get("error", "提交失败"))
+    return result
+
+
+@app.get("/api/v1/appeals")
+async def api_list_my_appeals(user_email: str = ""):
+    """列出成员自己的申诉记录。"""
+    from appeal_service import list_user_appeals
+    return {"success": True, "appeals": list_user_appeals(user_email)}
+
+
+@app.get("/api/v1/admin/appeals")
+async def api_list_all_appeals():
+    """列出所有申诉（管理员端）。"""
+    from appeal_service import list_all_appeals
+    return {"success": True, "appeals": list_all_appeals()}
+
+
+@app.post("/api/v1/admin/appeals/{appeal_id}/resolve")
+async def api_resolve_appeal(appeal_id: int, data: dict):
+    """管理员处理申诉：直接决定最终结果（approve=通过 / reject=打回）。"""
+    from review_service import resolve_appeal
+    result = resolve_appeal(
+        appeal_id,
+        data.get("admin_email", ""),
+        data.get("decision", ""),
+        data.get("form_comment", ""),
+        data.get("material_comments", {}),
+    )
     if not result.get("success"):
         raise HTTPException(400, result.get("error", "操作失败"))
     return result
@@ -734,14 +783,14 @@ async def api_list_submissions(user_email: str = ""):
         with _conn.cursor() as _cur:
             if user_email:
                 _cur.execute(
-                    "SELECT id, parent_id, zip_filename, reimb_type, created_at FROM submissions "
+                    "SELECT id, parent_id, zip_filename, reimb_type, status, created_at FROM submissions "
                     "WHERE user_email = %s ORDER BY created_at DESC, id DESC",
                     (user_email,))
                 rows = _cur.fetchall()
                 # 已被重传取代的旧单直接跳过（成员端只显示每条申请的最新版本；
                 # DB 行/批注/ZIP 保留，审核员端仍可见）
                 parent_ids = {r[1] for r in rows if r[1] is not None}
-                for rid, parent_id, fname, rtype, created_at in rows:
+                for rid, parent_id, fname, rtype, status, created_at in rows:
                     if rid in parent_ids:
                         continue
                     fpath = os.path.join(SUBMISSIONS_DIR, fname)
@@ -755,6 +804,7 @@ async def api_list_submissions(user_email: str = ""):
                         "size": size,
                         "modified": modified,
                         "reimb_type": rtype or "vat",
+                        "status": status or "pending",
                         "file_missing": file_missing,
                     })
             # 无邮箱 = 返回空列表（成员端必须登录）

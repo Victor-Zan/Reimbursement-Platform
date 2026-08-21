@@ -46,11 +46,12 @@ export default function LoginPage({ onLogin }: Props) {
           <div className="form-group">
             <label className="form-label">邮箱</label>
             <input
-              type="email"
+              type="text"
               className="form-input"
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="example@cuhk.edu.cn 或 @link.cuhk.edu.cn"
+              autoComplete="username"
               required
             />
           </div>
