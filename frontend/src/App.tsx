@@ -7,6 +7,7 @@ import RoleSelectPage from './pages/RoleSelectPage';
 import TopNav from './components/TopNav';
 import ReviewerDashboard from './pages/ReviewerDashboard';
 import ReviewMaterials from './pages/ReviewMaterials';
+import ReviewerHistory from './pages/ReviewerHistory';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminPermissions from './pages/AdminPermissions';
 import AdminAppeals from './pages/AdminAppeals';
@@ -234,6 +235,7 @@ export default function App() {
       <Route path="/member/review" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewSubmit formData={formData} materials={materials} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></div></> : <Navigate to="/login" />} />
       <Route path="/reviewer" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewerDashboard user={auth.user} /></div></> : <Navigate to="/login" />} />
       <Route path="/reviewer/materials" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewMaterials user={auth.user} /></div></> : <Navigate to="/login" />} />
+      <Route path="/reviewer/history" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewerHistory /></div></> : <Navigate to="/login" />} />
 
       <Route path="/admin" element={auth?.user?.is_admin ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><AdminDashboard user={auth.user} /></div></> : <Navigate to="/login" />} />
       <Route path="/admin/permissions" element={auth?.user?.is_admin ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><AdminPermissions /></div></> : <Navigate to="/login" />} />

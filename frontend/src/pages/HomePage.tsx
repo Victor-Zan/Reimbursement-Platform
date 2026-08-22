@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MATERIALS, typeLabel, typeColor } from '../config/materials';
 import type { MaterialKey } from '../types';
+import { TIME_RANGES, inTimeRange } from '../utils/timeRange';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
 
@@ -27,8 +28,7 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
   const [submissions, setSubmissions] = useState<SubmissionFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
-  const [historyDateFrom, setHistoryDateFrom] = useState('');
-  const [historyDateTo, setHistoryDateTo] = useState('');
+  const [historyTimeRange, setHistoryTimeRange] = useState('all');
   const [feedbackBadge, setFeedbackBadge] = useState(0);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
@@ -122,8 +122,7 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
 
   const filteredSubmissions = submissions.filter(s => {
     if (historySearch && !s.filename.includes(historySearch)) return false;
-    if (historyDateFrom && s.modified < historyDateFrom) return false;
-    if (historyDateTo && s.modified > historyDateTo + 'T23:59:59') return false;
+    if (!inTimeRange(historyTimeRange, s.modified)) return false;
     return true;
   });
 
@@ -184,13 +183,9 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-head"><h2 className="modal-title"><Icon name="folder" size={18} /> 查看历史提交</h2></div>
             <input className="form-input" placeholder="搜索文件名..." value={historySearch} onChange={e => setHistorySearch(e.target.value)} style={{ marginBottom: 12 }} />
-            <div className="form-row" style={{ gap: 8 }}>
-              <input type="date" className="form-input" value={historyDateFrom} onChange={e => setHistoryDateFrom(e.target.value)} style={{ fontSize: 12 }} title="起始日期" />
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span className="filter-sep">至</span>
-                <input type="date" className="form-input" value={historyDateTo} onChange={e => setHistoryDateTo(e.target.value)} style={{ fontSize: 12 }} title="截止日期" />
-              </div>
-            </div>
+            <select className="form-input" value={historyTimeRange} onChange={e => setHistoryTimeRange(e.target.value)} style={{ marginBottom: 12 }} title="按时间范围筛选">
+              {TIME_RANGES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
             {loading ? <div className="loading"><span className="spinner" /> 加载中...</div>
              : filteredSubmissions.length === 0 ? <div className="empty"><div className="empty-icon"><Icon name="folder" size={20} /></div>暂无提交记录</div>
              : <div className="submission-list">{filteredSubmissions.map((s, i) => (
