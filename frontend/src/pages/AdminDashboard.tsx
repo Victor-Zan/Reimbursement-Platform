@@ -64,8 +64,8 @@ export default function AdminDashboard({ user }: Props) {
           <div className="stat-card-label">待审核报销</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-num stat-num--success">{stats.approved}</div>
-          <div className="stat-card-label">已通过报销</div>
+          <div className="stat-card-num stat-num--error">{stats.rejected}</div>
+          <div className="stat-card-label">已打回报销</div>
         </div>
       </div>
 
