@@ -4,6 +4,7 @@
 对 ReimbursementFormData 执行所有注册的校验规则，
 返回汇总的校验结果。
 """
+from reimbursement_types import REIMBURSEMENT_TYPES
 from validation_rules import RULES, ReimbursementFormData, InvoiceSectionData
 
 
@@ -33,6 +34,16 @@ def validate_form(data: ReimbursementFormData) -> ValidationResult:
 
 def build_form_data(json_data: dict) -> ReimbursementFormData:
     """从 JSON 字典构建 ReimbursementFormData 实例。"""
+    # 多类型数组；旧请求只有 type 字段时回退单类型
+    raw_types = json_data.get("types") or []
+    if not isinstance(raw_types, list):
+        raw_types = []
+    types = [t for t in raw_types if isinstance(t, str) and t in REIMBURSEMENT_TYPES]
+    if not types:
+        types = [json_data.get("type", "vat") or "vat"]
+        if types[0] not in REIMBURSEMENT_TYPES:
+            types = ["vat"]
+
     invoices = []
     for inv in json_data.get("invoices", []):
         invoices.append(InvoiceSectionData(
@@ -45,10 +56,12 @@ def build_form_data(json_data: dict) -> ReimbursementFormData:
             reimbursement_amount=float(inv.get("reimbursement_amount", 0)),
             handler=inv.get("handler", ""),
             items=inv.get("items", []),
+            reimb_type=inv.get("reimb_type", "") or (types[0] if len(types) == 1 else "vat"),
         ))
 
     return ReimbursementFormData(
-        type=json_data.get("type", "vat"),
+        type=types[0] if types else "vat",
+        types=types,
         activity_name=json_data.get("activity_name", ""),
         org_name=json_data.get("org_name", ""),
         activity_end_date=json_data.get("activity_end_date", ""),

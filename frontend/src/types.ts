@@ -49,6 +49,8 @@ export interface InvoiceSection {
   reimbursement_amount: number;
   handler: string;
   items: DetailRow[];
+  /** 发票所属报销类型（多类型报销时用于分类与校验） */
+  reimb_type: ReimbursementType;
 }
 
 /** 报销类型 */
@@ -59,7 +61,8 @@ export type MaterialKey = 'invoices' | 'evidence' | 'policy' | 'rider_ids' | 'it
 
 /** 完整报销表单数据 */
 export interface ReimbursementFormData {
-  type: ReimbursementType;
+  /** 报销类型数组（一次提交可包含多种类型；旧草稿恢复时由 type 迁移） */
+  types: ReimbursementType[];
   activity_name: string;
   org_name: string;
   activity_end_date: string;

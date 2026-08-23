@@ -57,7 +57,7 @@ def list_user_appeals(user_email: str) -> list[dict]:
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT a.id, a.submission_zip, a.status, a.reason, a.created_at, s.reimb_type
+                SELECT a.id, a.submission_zip, a.status, a.reason, a.created_at, s.reimb_type, s.reimb_types
                 FROM appeals a
                 LEFT JOIN submissions s ON s.id = a.submission_id
                 WHERE a.user_email = %s
@@ -71,6 +71,7 @@ def list_user_appeals(user_email: str) -> list[dict]:
                     "reason": r[3] or "",
                     "created_at": r[4].isoformat() if r[4] else "",
                     "reimb_type": r[5] or "vat",
+                    "reimb_types": r[6] if isinstance(r[6], list) and r[6] else [r[5] or "vat"],
                 }
                 for r in cur.fetchall()
             ]
@@ -85,7 +86,7 @@ def list_all_appeals() -> list[dict]:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT a.id, a.submission_id, a.submission_zip, a.user_email, a.reason, a.status,
-                       a.admin_email, a.created_at, s.reimb_type, s.status AS submission_status
+                       a.admin_email, a.created_at, s.reimb_type, s.reimb_types, s.status AS submission_status
                 FROM appeals a
                 LEFT JOIN submissions s ON s.id = a.submission_id
                 ORDER BY (a.status = 'pending') DESC, a.created_at DESC, a.id DESC
@@ -101,7 +102,8 @@ def list_all_appeals() -> list[dict]:
                     "admin_email": r[6] or "",
                     "created_at": r[7].isoformat() if r[7] else "",
                     "reimb_type": r[8] or "vat",
-                    "submission_status": r[9] or "pending",
+                    "reimb_types": r[9] if isinstance(r[9], list) and r[9] else [r[8] or "vat"],
+                    "submission_status": r[10] or "pending",
                 }
                 for r in cur.fetchall()
             ]

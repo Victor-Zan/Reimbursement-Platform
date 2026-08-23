@@ -2,29 +2,52 @@ import { useState } from 'react';
 import FileUploader from '../components/FileUploader';
 import StepIndicator from '../components/StepIndicator';
 import { OCRResult, OCRFileResult, ReimbursementType, MaterialKey } from '../types';
-import { TYPE_MATERIALS, materialFor } from '../config/materials';
-import type { MaterialFilesState } from '../App';
+import { TYPE_MATERIALS, materialFor, SELECTABLE_TYPES, TAB_LABELS, typeColor } from '../config/materials';
+import type { TypeMaterialsState, MaterialEntry } from '../App';
+import { emptyMaterialEntry } from '../App';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
 
 interface Props {
-  reimbType: ReimbursementType;
-  materials: MaterialFilesState;
-  setMaterialFiles: (key: MaterialKey, files: File[]) => void;
-  clearMaterialExisting: (key: MaterialKey) => void;
-  ocrResults: OCRResult[];
-  setOcrResults: (results: OCRResult[]) => void;
+  materials: TypeMaterialsState;
+  setMaterialFiles: (type: ReimbursementType, key: MaterialKey, files: File[]) => void;
+  clearMaterialExisting: (type: ReimbursementType, key: MaterialKey) => void;
+  ocrResults: Partial<Record<ReimbursementType, OCRResult[]>>;
+  setOcrResults: (type: ReimbursementType, results: OCRResult[]) => void;
   ocrLoading: boolean;
   setOcrLoading: (v: boolean) => void;
-  applyOCRResults: (results: OCRResult[]) => void;
-  onAddManualInvoice: () => void;
-  invoiceSectionCount: number;
+  applyOCRResults: (type: ReimbursementType, results: OCRResult[]) => void;
+  onAddManualInvoice: (type: ReimbursementType) => void;
+  invoiceSectionCounts: Partial<Record<ReimbursementType, number>>;
   onNext: () => void;
   onHome: () => void;
 }
 
+const entryFor = (materials: TypeMaterialsState, type: ReimbursementType, key: MaterialKey): MaterialEntry =>
+  materials[type]?.[key] ?? emptyMaterialEntry();
+
+const typeFileCount = (materials: TypeMaterialsState, type: ReimbursementType): number =>
+  TYPE_MATERIALS[type].reduce((sum, k) => sum + entryFor(materials, type, k).files.length + entryFor(materials, type, k).existingUrls.length, 0);
+
+/** 某类型是否有内容（上传文件/原有文件/手工发票区块） */
+const typeHasContent = (materials: TypeMaterialsState, type: ReimbursementType, invoiceSectionCounts: Partial<Record<ReimbursementType, number>>): boolean =>
+  typeFileCount(materials, type) > 0 || (invoiceSectionCounts[type] || 0) > 0;
+
+/** 某类型是否满足全部材料数量要求 */
+const typeComplete = (materials: TypeMaterialsState, type: ReimbursementType, invoiceSectionCounts: Partial<Record<ReimbursementType, number>>): boolean =>
+  TYPE_MATERIALS[type].every(k => {
+    const cfg = materialFor(type, k);
+    const count = entryFor(materials, type, k).files.length + entryFor(materials, type, k).existingUrls.length;
+    if (k === 'invoices') return (invoiceSectionCounts[type] || 0) > 0 && count >= cfg.minCount;   // OCR 或手动票
+    return count >= cfg.minCount;
+  }) &&
+  TYPE_MATERIALS[type].every(k => {
+    const cfg = materialFor(type, k);
+    const count = entryFor(materials, type, k).files.length + entryFor(materials, type, k).existingUrls.length;
+    return cfg.maxCount === null || count <= cfg.maxCount;
+  });
+
 export default function UploadMaterials({
-  reimbType,
   materials,
   setMaterialFiles,
   clearMaterialExisting,
@@ -34,63 +57,63 @@ export default function UploadMaterials({
   setOcrLoading,
   applyOCRResults,
   onAddManualInvoice,
-  invoiceSectionCount,
+  invoiceSectionCounts,
   onNext,
   onHome,
 }: Props) {
   const { toast } = useFeedback();
-  const typeMaterials = TYPE_MATERIALS[reimbType];
-  const isReEdit = typeMaterials.some(k => materials[k].existingUrls.length > 0 || materials[k].existingPaths.length > 0);
-  const [ocrError, setOcrError] = useState('');
+  const [activeType, setActiveType] = useState<ReimbursementType>('vat');
+  const [ocrErrors, setOcrErrors] = useState<Partial<Record<ReimbursementType, string>>>({});
+
+  // 重编辑场景：任一类型有原有文件
+  const isReEdit = SELECTABLE_TYPES.some(t => TYPE_MATERIALS[t].some(k => entryFor(materials, t, k).existingUrls.length > 0 || entryFor(materials, t, k).existingPaths.length > 0));
 
   const handleBatchOCR = async () => {
-    if (materials.invoices.files.length === 0) return;
+    const invoiceFiles = entryFor(materials, activeType, 'invoices').files;
+    if (invoiceFiles.length === 0) return;
     setOcrLoading(true);
-    setOcrError('');
+    setOcrErrors(p => ({ ...p, [activeType]: '' }));
 
     const form = new FormData();
-    materials.invoices.files.forEach(f => form.append('files', f));
+    invoiceFiles.forEach(f => form.append('files', f));
 
     try {
       const resp = await fetch('/api/v1/ocr/invoices', { method: 'POST', body: form });
       const json = await resp.json();
-      if (!json.success) { setOcrError('批量识别失败'); return; }
+      if (!json.success) { setOcrErrors(p => ({ ...p, [activeType]: '批量识别失败' })); return; }
       const results: OCRFileResult[] = json.results || [];
       const failed = results.filter(r => !r.success);
-      if (failed.length > 0) setOcrError(`${failed.length} 张发票识别失败：${failed.map(f => f.filename).join('、')}`);
+      if (failed.length > 0) setOcrErrors(p => ({ ...p, [activeType]: `${failed.length} 张发票识别失败：${failed.map(f => f.filename).join('、')}` }));
       const successResults: OCRResult[] = results.filter(r => r.success && r.data).map(r => r.data!);
-      setOcrResults(successResults);
-      applyOCRResults(successResults);
-    } catch { setOcrError('网络错误，请检查后端是否启动'); }
+      setOcrResults(activeType, successResults);
+      applyOCRResults(activeType, successResults);
+    } catch { setOcrErrors(p => ({ ...p, [activeType]: '网络错误，请检查后端是否启动' })); }
     finally { setOcrLoading(false); }
   };
 
   const handleSetFiles = (key: MaterialKey) => (files: File[]) => {
-    const cfg = materialFor(reimbType, key);
+    const cfg = materialFor(activeType, key);
     let next = files;
     if (cfg.maxCount !== null && next.length > cfg.maxCount) {
       toast(`${cfg.label}最多上传 ${cfg.maxCount} 张`, 'warn');
       next = next.slice(0, cfg.maxCount);
     }
-    setMaterialFiles(key, next);
+    setMaterialFiles(activeType, key, next);
     // 重编辑时新增发票文件 = 替换原有发票（与既有增值税行为一致），需重新识别
-    if (key === 'invoices' && cfg.useOCR && next.length > 0 && isReEdit) {
-      setOcrResults([]);
-      clearMaterialExisting(key);
+    const entry = entryFor(materials, activeType, key);
+    if (key === 'invoices' && cfg.useOCR && next.length > 0 && (entry.existingUrls.length > 0 || entry.existingPaths.length > 0)) {
+      setOcrResults(activeType, []);
+      clearMaterialExisting(activeType, key);
     }
   };
 
-  const countFor = (key: MaterialKey) => materials[key].files.length + materials[key].existingUrls.length;
-  const canNext =
-    typeMaterials.every(k => {
-      const cfg = materialFor(reimbType, k);
-      if (k === 'invoices') return invoiceSectionCount > 0 && countFor(k) >= cfg.minCount;   // OCR 或手动票
-      return countFor(k) >= cfg.minCount;
-    }) &&
-    typeMaterials.every(k => {
-      const cfg = materialFor(reimbType, k);
-      return cfg.maxCount === null || countFor(k) <= cfg.maxCount;
-    });
+  // 至少一个类型有内容，且每个有内容的类型满足全部材料要求
+  const hasAnyContent = SELECTABLE_TYPES.some(t => typeHasContent(materials, t, invoiceSectionCounts));
+  const canNext = hasAnyContent && SELECTABLE_TYPES.every(t => !typeHasContent(materials, t, invoiceSectionCounts) || typeComplete(materials, t, invoiceSectionCounts));
+
+  const activeEntry = (key: MaterialKey) => entryFor(materials, activeType, key);
+  const activeOCR = ocrResults[activeType] || [];
+  const ocrError = ocrErrors[activeType] || '';
 
   return (
     <>
@@ -103,12 +126,26 @@ export default function UploadMaterials({
         </div>
       )}
 
-      {typeMaterials.map(key => {
-        const cfg = materialFor(reimbType, key);
-        const entry = materials[key];
+      {/* 类型标签页：一次报销可同时包含多种类型，切页不丢失已传材料 */}
+      <div className="type-tabs" role="tablist" aria-label="报销类型">
+        {SELECTABLE_TYPES.map(t => (
+          <button key={t} role="tab" aria-selected={activeType === t}
+                  className={`type-tab${activeType === t ? ' is-active' : ''}`}
+                  style={{ '--accent': typeColor(t) } as React.CSSProperties}
+                  onClick={() => setActiveType(t)}>
+            <span>{TAB_LABELS[t]}</span>
+            {typeFileCount(materials, t) > 0 && <span className="type-tab-count">{typeFileCount(materials, t)} 个文件</span>}
+            {typeComplete(materials, t, invoiceSectionCounts) && <span className="badge badge-ok" style={{ marginLeft: 6 }}>✓</span>}
+          </button>
+        ))}
+      </div>
+
+      {TYPE_MATERIALS[activeType].map(key => {
+        const cfg = materialFor(activeType, key);
+        const entry = activeEntry(key);
         const isInvoice = key === 'invoices';
         const isOCRInvoice = isInvoice && cfg.useOCR;
-        const showManualAdd = isOCRInvoice && (reimbType === 'travel' || ocrError !== '');
+        const showManualAdd = isOCRInvoice && (activeType === 'travel' || ocrError !== '');
 
         return (
           <div className="card" key={key}>
@@ -129,20 +166,20 @@ export default function UploadMaterials({
             <FileUploader file={null} setFile={() => {}} files={entry.files} setFiles={handleSetFiles(key)}
               label={isReEdit ? "替换或追加（可选）" : `点击或拖拽上传${cfg.label}（可多选）`} accept={cfg.accept} hint={cfg.hint} multiple />
 
-            {isOCRInvoice && entry.files.length > 0 && ocrResults.length === 0 && (
+            {isOCRInvoice && entry.files.length > 0 && activeOCR.length === 0 && (
               <button className="btn btn-primary" onClick={handleBatchOCR} disabled={ocrLoading} style={{ marginTop: 16 }}>
                 {ocrLoading ? <><span className="spinner" /> 正在识别 {entry.files.length} 张发票...</> : <><Icon name="search" size={15} /> 开始识别 {entry.files.length} 张发票</>}
               </button>
             )}
             {isOCRInvoice && ocrError && <div className="alert alert-error" style={{ marginTop: 12 }}>{ocrError}</div>}
             {isOCRInvoice && showManualAdd && (
-              <button className="btn btn-secondary btn-sm" onClick={onAddManualInvoice} style={{ marginTop: 12 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => onAddManualInvoice(activeType)} style={{ marginTop: 12 }}>
                 <Icon name="edit" size={14} /> 手动添加{cfg.label}（不识别，在下一步填写）
               </button>
             )}
-            {isOCRInvoice && ocrResults.length > 0 && (
+            {isOCRInvoice && activeOCR.length > 0 && (
               <div style={{ marginTop: 16 }}>
-                {ocrResults.map((result, idx) => (
+                {activeOCR.map((result, idx) => (
                   <div key={idx} className="ocr-card">
                     <h3 className="section-title"><Icon name="receipt" size={16} /> 发票 {idx + 1}</h3>
                     <div className="ocr-grid">

@@ -13,9 +13,12 @@ from typing import Optional
 
 import psycopg2
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+# request.form() 解析出的上传文件是 starlette 的 UploadFile（fastapi.UploadFile 是其子类，
+# isinstance 检查需同时覆盖两者，否则文件会被过滤掉）
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from config import (
     UPLOADS_DIR,
@@ -237,39 +240,65 @@ async def generate_excel(data: dict):
 
 
 @app.post("/api/v1/submit")
-async def submit_package(
-    type: str = Form("vat"),
-    previous_zip: str = Form(""),
-    activity_name: str = Form(""),
-    org_name: str = Form(""),
-    activity_end_date: str = Form(""),
-    reimbursement_date: str = Form(""),
-    invoices_json: str = Form("[]"),
-    actual_total: float = Form(0.0),
-    finance_officer: str = Form(""),
-    activity_leader_opinion: str = Form(""),
-    alipay_account: str = Form(""),
-    invoices_files: list[UploadFile] = File(default_factory=list),
-    evidence_files: list[UploadFile] = File(default_factory=list),
-    policy_files: list[UploadFile] = File(default_factory=list),
-    rider_ids_files: list[UploadFile] = File(default_factory=list),
-    itinerary_files: list[UploadFile] = File(default_factory=list),
-    payments_files: list[UploadFile] = File(default_factory=list),
-    existing_invoices_paths: str = Form("[]"),
-    existing_evidence_paths: str = Form("[]"),
-    existing_policy_paths: str = Form("[]"),
-    existing_rider_ids_paths: str = Form("[]"),
-    existing_itinerary_paths: str = Form("[]"),
-    existing_payments_paths: str = Form("[]"),
-    user_email: str = Form(""),
-):
+async def submit_package(request: Request):
     """
-    提交完整报销申请包（支持多发票与多种报销类型）。
-    """
-    invoices_data = json.loads(invoices_json)
+    提交完整报销申请包（支持多发票与多类型报销）。
 
-    form = build_form_data({
-        "type": type,
+    新协议（types_json 存在）：材料字段按类型命名 {type}_{key}_files / existing_{type}_{key}_paths；
+    旧协议（无 types_json）：type + {key}_files / existing_{key}_paths（兼容旧前端与历史重传）。
+    """
+    form = await request.form()
+
+    def _str(name: str, default: str = "") -> str:
+        v = form.get(name)
+        return str(v) if v is not None else default
+
+    def _files(name: str) -> list:
+        return [f for f in form.getlist(name) if isinstance(f, UploadFile) or isinstance(f, StarletteUploadFile)]
+
+    def _json_list(name: str) -> list:
+        raw = _str(name)
+        try:
+            val = json.loads(raw) if raw else []
+            return val if isinstance(val, list) else []
+        except Exception:
+            return []
+
+    # ---- 类型判定：types_json 新协议，否则旧单类型协议 ----
+    types_json = _str("types_json")
+    legacy = False
+    if types_json:
+        try:
+            types = json.loads(types_json)
+        except Exception:
+            raise HTTPException(400, "types_json 格式错误")
+    else:
+        types = [_str("type", "vat")]
+        legacy = True
+    if not isinstance(types, list) or not types:
+        raise HTTPException(400, "至少选择一种报销类型")
+    for t in types:
+        if t not in REIMBURSEMENT_TYPES:
+            raise HTTPException(400, f"未知报销类型: {t}")
+
+    activity_name = _str("activity_name")
+    org_name = _str("org_name")
+    activity_end_date = _str("activity_end_date")
+    reimbursement_date = _str("reimbursement_date")
+    try:
+        invoices_data = json.loads(_str("invoices_json", "[]"))
+    except Exception:
+        invoices_data = []
+    actual_total = float(_str("actual_total", "0") or 0)
+    finance_officer = _str("finance_officer")
+    activity_leader_opinion = _str("activity_leader_opinion")
+    alipay_account = _str("alipay_account")
+    previous_zip = _str("previous_zip")
+    user_email = _str("user_email")
+
+    form_data = build_form_data({
+        "types": types,
+        "type": types[0],
         "activity_name": activity_name,
         "org_name": org_name,
         "activity_end_date": activity_end_date,
@@ -282,105 +311,119 @@ async def submit_package(
     })
 
     # 先校验
-    validation = validate_form(form)
+    validation = validate_form(form_data)
     if not validation.passed:
         raise HTTPException(400, detail={
             "message": "表单校验未通过",
             "errors": validation.errors,
         })
 
-    # 保存上传文件（已有路径 + 新上传），按类型校验材料
+    # 保存上传文件（已有路径 + 新上传），按类型×材料校验
     # 文件校验只作用于新材料与新增类型专属规则；增值税的发票/活动凭证保持现状零校验
-    if type not in REIMBURSEMENT_TYPES:
-        raise HTTPException(400, f"未知报销类型: {type}")
-
-    grouped_new = {
-        "invoices": invoices_files,
-        "evidence": evidence_files,
-        "policy": policy_files,
-        "rider_ids": rider_ids_files,
-        "itinerary": itinerary_files,
-        "payments": payments_files,
-    }
-    grouped_existing = {
-        "invoices": json.loads(existing_invoices_paths or "[]"),
-        "evidence": json.loads(existing_evidence_paths or "[]"),
-        "policy": json.loads(existing_policy_paths or "[]"),
-        "rider_ids": json.loads(existing_rider_ids_paths or "[]"),
-        "itinerary": json.loads(existing_itinerary_paths or "[]"),
-        "payments": json.loads(existing_payments_paths or "[]"),
-    }
     NEW_MATERIAL_KEYS = {"policy", "rider_ids", "itinerary", "payments"}
 
-    material_paths = {}
-    for key in TYPE_MATERIALS[type]:
-        cfg = material_cfg(type, key)
-        existing = grouped_existing.get(key, [])
-        new_files = grouped_new.get(key, [])
-        total = len(existing) + len(new_files)
+    def _invoice_type_of(inv: dict) -> str:
+        """发票所属类型：多类型按发票自带标签，旧单类型回退表单类型。"""
+        return inv.get("reimb_type") or (types[0] if len(types) == 1 else "")
 
-        # 新材料：必传张数 + 上限校验（逐文件校验在保存时进行）
-        if key in NEW_MATERIAL_KEYS:
-            if total < cfg["min_count"]:
-                raise HTTPException(400, f"{cfg['label']}至少上传 {cfg['min_count']} 张")
-            if cfg["max_count"] is not None and total > cfg["max_count"]:
-                raise HTTPException(400, f"{cfg['label']}最多上传 {cfg['max_count']} 张")
-        # 发票：仅新增类型专属规则（增值税/保险保持现状）
-        elif key == "invoices":
-            if type == "bulk" and total > cfg["max_count"]:
-                raise HTTPException(400, f"大量发票报销最多上传 {cfg['max_count']} 张发票")
-            if type == "travel" and total != len(invoices_data):
-                raise HTTPException(400, f"票据区块数({len(invoices_data)})与票据文件数({total})不一致，请逐一对应")
+    material_paths_by_type: dict[str, dict] = {}
+    for t in types:
+        for key in TYPE_MATERIALS[t]:
+            cfg = material_cfg(t, key)
+            if legacy:
+                existing = _json_list(f"existing_{key}_paths")
+                new_files = _files(f"{key}_files")
+            else:
+                existing = _json_list(f"existing_{t}_{key}_paths")
+                new_files = _files(f"{t}_{key}_files")
+            total = len(existing) + len(new_files)
 
-        paths = list(existing)
-        for f in new_files:
-            if f.filename:
-                if key in NEW_MATERIAL_KEYS:
-                    content = _validate_file(f, cfg)
-                else:
-                    content = await f.read()
-                # 带权限限制的 PDF（如电子保单）自动解密，避免审核端受限提示
-                if f.filename.lower().endswith(".pdf"):
-                    content = _strip_pdf_encryption(content)
-                paths.append(_save_upload(content, f.filename, cfg["upload_subdir"]))
-        material_paths[key] = paths
+            # 新材料：必传张数 + 上限校验（逐文件校验在保存时进行）
+            if key in NEW_MATERIAL_KEYS:
+                if total < cfg["min_count"]:
+                    raise HTTPException(400, f"{cfg['label']}至少上传 {cfg['min_count']} 张")
+                if cfg["max_count"] is not None and total > cfg["max_count"]:
+                    raise HTTPException(400, f"{cfg['label']}最多上传 {cfg['max_count']} 张")
+            # 发票：仅类型专属规则（增值税/保险保持现状）
+            elif key == "invoices":
+                if t == "bulk" and total > cfg["max_count"]:
+                    raise HTTPException(400, f"大量发票报销最多上传 {cfg['max_count']} 张发票")
+                if t == "travel":
+                    travel_invoices = [i for i in invoices_data if _invoice_type_of(i) == "travel"]
+                    if total != len(travel_invoices):
+                        raise HTTPException(400, f"票据区块数({len(travel_invoices)})与票据文件数({total})不一致，请逐一对应")
 
-    # 对每张发票拼接信息条
+            paths = list(existing)
+            for f in new_files:
+                if f.filename:
+                    if key in NEW_MATERIAL_KEYS:
+                        content = _validate_file(f, cfg)
+                    else:
+                        content = await f.read()
+                    # 带权限限制的 PDF（如电子保单）自动解密，避免审核端受限提示
+                    if f.filename.lower().endswith(".pdf"):
+                        content = _strip_pdf_encryption(content)
+                    paths.append(_save_upload(content, f.filename, cfg["upload_subdir"]))
+            material_paths_by_type.setdefault(t, {})[key] = paths
+
+    # 对每张发票拼接信息条（按类型分别与发票区块位置对应）
     from invoice_annotator import annotate_invoice
-    annotated_paths = []
-    for idx, inv_path in enumerate(material_paths["invoices"]):
-        try:
-            inv_data = invoices_data[idx] if idx < len(invoices_data) else {}
-            inv_items = inv_data.get("items", [])
-            item_names = "、".join(it.get("name", "") for it in inv_items if it.get("name"))
-            inv_amount = inv_data.get("reimbursement_amount", 0)
-            annotated = annotate_invoice(
-                inv_path,
-                org_name or "",
-                activity_name or "",
-                item_names or "未识别",
-                f"¥{inv_amount:.2f}",
-                SUBMISSIONS_DIR,
-            )
-            annotated_paths.append(annotated)
-        except Exception as e:
-            print(f"[标注失败] {inv_path}: {e}")
-            annotated_paths.append(inv_path)
+    annotated_by_type: dict[str, list] = {}
+    for t in types:
+        t_invoices = [i for i in invoices_data if _invoice_type_of(i) == t]
+        annotated = []
+        for idx, inv_path in enumerate(material_paths_by_type[t].get("invoices", [])):
+            try:
+                inv_data = t_invoices[idx] if idx < len(t_invoices) else {}
+                inv_items = inv_data.get("items", [])
+                item_names = "、".join(it.get("name", "") for it in inv_items if it.get("name"))
+                inv_amount = inv_data.get("reimbursement_amount", 0)
+                annotated.append(annotate_invoice(
+                    inv_path,
+                    org_name or "",
+                    activity_name or "",
+                    item_names or "未识别",
+                    f"¥{inv_amount:.2f}",
+                    SUBMISSIONS_DIR,
+                ))
+            except Exception as e:
+                print(f"[标注失败] {inv_path}: {e}")
+                annotated.append(inv_path)
+        annotated_by_type[t] = annotated
 
     # 生成Excel
     try:
-        excel_path = generate_reimbursement_excel(form, SUBMISSIONS_DIR)
+        excel_path = generate_reimbursement_excel(form_data, SUBMISSIONS_DIR)
     except Exception as e:
         raise HTTPException(500, f"Excel生成失败: {str(e)}")
 
-    # 打包（使用标注后的发票）
+    # 打包（单类型保持历史平铺结构；多类型按类型建子文件夹）
     try:
-        zip_path = create_submission_package(
-            excel_path=excel_path,
-            material_groups={**material_paths, "invoices": annotated_paths},
-            output_dir=SUBMISSIONS_DIR,
-            activity_name=activity_name,
-        )
+        if len(types) == 1:
+            t = types[0]
+            material_groups = {}
+            for key in TYPE_MATERIALS[t]:
+                material_groups[key] = annotated_by_type[t] if key == "invoices" else material_paths_by_type[t].get(key, [])
+            zip_path = create_submission_package(
+                excel_path=excel_path,
+                material_groups=material_groups,
+                output_dir=SUBMISSIONS_DIR,
+                activity_name=activity_name,
+            )
+        else:
+            material_groups = {}
+            for t in types:
+                groups = {}
+                for key in TYPE_MATERIALS[t]:
+                    groups[key] = annotated_by_type[t] if key == "invoices" else material_paths_by_type[t].get(key, [])
+                material_groups[t] = groups
+            zip_path = create_submission_package(
+                excel_path=excel_path,
+                material_groups=material_groups,
+                output_dir=SUBMISSIONS_DIR,
+                activity_name=activity_name,
+                nested=True,
+            )
     except Exception as e:
         raise HTTPException(500, f"打包失败: {str(e)}")
 
@@ -388,7 +431,8 @@ async def submit_package(
     # 重传关联：打回重传时前端携带旧 ZIP 文件名（previous_zip）→ 新行 parent_id=旧 id、
     # status='resubmitted'；查不到旧单（如草稿残留过期 previous_zip）则按普通 pending 提交
     full_form = {
-        "type": type,
+        "types": types,
+        "type": types[0],
         "activity_name": activity_name, "org_name": org_name,
         "activity_end_date": activity_end_date, "reimbursement_date": reimbursement_date,
         "invoices": invoices_data, "actual_total": actual_total,
@@ -405,13 +449,27 @@ async def submit_package(
                 _cur.execute("SELECT id FROM submissions WHERE zip_filename = %s", (previous_zip,))
                 row = _cur.fetchone()
                 parent_id = row[0] if row else None
+            if len(types) == 1:
+                # 单类型：form_data 保持历史结构（平铺 material_paths）
+                t = types[0]
+                stored_paths = material_paths_by_type[t]
+                form_payload = {
+                    "form": full_form,
+                    "invoice_paths": stored_paths.get("invoices", []),
+                    "evidence_paths": stored_paths.get("evidence", []),
+                    "material_paths": stored_paths,
+                }
+            else:
+                # 多类型：material_paths 嵌套 {类型: {材料key: 路径列表}}
+                form_payload = {"form": full_form, "material_paths": material_paths_by_type}
             _cur.execute(
-                "INSERT INTO submissions (zip_filename, user_email, reimb_type, status, activity_name, parent_id, form_data) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (zip_name, user_email or "", type,
+                "INSERT INTO submissions (zip_filename, user_email, reimb_type, reimb_types, status, activity_name, parent_id, form_data) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (zip_name, user_email or "", types[0] if len(types) == 1 else "mixed",
+                 json.dumps(types),
                  "resubmitted" if parent_id is not None else "pending",
                  activity_name, parent_id,
-                 json.dumps({"form": full_form, "invoice_paths": material_paths.get("invoices", []), "evidence_paths": material_paths.get("evidence", []), "material_paths": material_paths}, ensure_ascii=False)),
+                 json.dumps(form_payload, ensure_ascii=False)),
             )
         _conn.commit()
     except psycopg2.errors.UniqueViolation:
@@ -529,7 +587,7 @@ async def api_review_list():
     try:
         with _conn.cursor() as _cur:
             _cur.execute("""
-                SELECT s.id, s.zip_filename, s.status, s.reimb_type, s.created_at,
+                SELECT s.id, s.zip_filename, s.status, s.reimb_type, s.reimb_types, s.created_at,
                        ann.reviewer_email, ann.created_at AS reviewed_at
                 FROM submissions s
                 LEFT JOIN LATERAL (
@@ -539,7 +597,7 @@ async def api_review_list():
                 ORDER BY s.updated_at DESC, s.id DESC
             """)
             for row in _cur.fetchall():
-                _, fname, status, rtype, created_at, reviewer_email, reviewed_at = row
+                _, fname, status, rtype, rtypes, created_at, reviewer_email, reviewed_at = row
                 fpath = os.path.join(SUBMISSIONS_DIR, fname)
                 if os.path.isfile(fpath):
                     stat = os.stat(fpath)
@@ -554,6 +612,7 @@ async def api_review_list():
                     "reviewer_email": reviewer_email or "",
                     "reviewed_at": reviewed_at.isoformat() if reviewed_at else "",
                     "reimb_type": rtype or "vat",
+                    "reimb_types": rtypes if isinstance(rtypes, list) and rtypes else [rtype or "vat"],
                     "file_missing": file_missing,
                 })
     finally:
@@ -731,8 +790,18 @@ async def api_get_submission_data(filename: str):
             result: dict = {"success": True}
             if "form" in data:
                 result["form_data"] = data["form"]
+                if isinstance(result["form_data"], dict) and "types" not in result["form_data"]:
+                    result["form_data"]["types"] = [result["form_data"].get("type") or "vat"]
                 # 将服务端文件路径转为可访问的 URL
                 mp = data.get("material_paths") or {}
+                nested_mp = mp if (mp and isinstance(next(iter(mp.values()), None), dict)) else None
+                if nested_mp is not None:
+                    # 多类型：嵌套 {类型: {key: [paths]}} → 平铺 {key: [paths]}（按类型顺序合并）
+                    flat_mp: dict[str, list] = {}
+                    for t, tmap in nested_mp.items():
+                        for key, paths in tmap.items():
+                            flat_mp.setdefault(key, []).extend(paths)
+                    mp = flat_mp
                 if not mp:
                     # 兼容旧数据（只有 invoice_paths/evidence_paths）
                     mp = {
@@ -751,6 +820,21 @@ async def api_get_submission_data(filename: str):
                             urls.append(f"/api/v1/uploads/{rel}")
                     result["material_paths"][key] = valid
                     result["material_urls"][key] = urls
+                # 多类型：额外返回按类型嵌套的 URL（重新编辑按类型恢复材料）
+                if nested_mp is not None:
+                    result["type_material_urls"] = {}
+                    result["type_material_paths"] = {}
+                    for t, tmap in nested_mp.items():
+                        for key, paths in tmap.items():
+                            urls: list = []
+                            valid: list = []
+                            for p in paths:
+                                if os.path.isfile(p):
+                                    valid.append(p)
+                                    rel = os.path.relpath(p, UPLOADS_DIR).replace("\\", "/")
+                                    urls.append(f"/api/v1/uploads/{rel}")
+                            result["type_material_urls"].setdefault(t, {})[key] = urls
+                            result["type_material_paths"].setdefault(t, {})[key] = valid
             else:
                 result["form_data"] = data
                 result["material_urls"] = {}
@@ -783,14 +867,14 @@ async def api_list_submissions(user_email: str = ""):
         with _conn.cursor() as _cur:
             if user_email:
                 _cur.execute(
-                    "SELECT id, parent_id, zip_filename, reimb_type, status, created_at FROM submissions "
+                    "SELECT id, parent_id, zip_filename, reimb_type, reimb_types, status, created_at FROM submissions "
                     "WHERE user_email = %s ORDER BY created_at DESC, id DESC",
                     (user_email,))
                 rows = _cur.fetchall()
                 # 已被重传取代的旧单直接跳过（成员端只显示每条申请的最新版本；
                 # DB 行/批注/ZIP 保留，审核员端仍可见）
                 parent_ids = {r[1] for r in rows if r[1] is not None}
-                for rid, parent_id, fname, rtype, status, created_at in rows:
+                for rid, parent_id, fname, rtype, rtypes, status, created_at in rows:
                     if rid in parent_ids:
                         continue
                     fpath = os.path.join(SUBMISSIONS_DIR, fname)
@@ -804,6 +888,7 @@ async def api_list_submissions(user_email: str = ""):
                         "size": size,
                         "modified": modified,
                         "reimb_type": rtype or "vat",
+                        "reimb_types": rtypes if isinstance(rtypes, list) and rtypes else [rtype or "vat"],
                         "status": status or "pending",
                         "file_missing": file_missing,
                     })
@@ -831,18 +916,27 @@ async def api_preview_submission(filename: str):
     """
     解压 ZIP 并返回文件内容供审核员在线预览。
     按 ZIP 内文件夹名分流各材料（发票/活动凭证/保单/身份凭证/行程单/支付记录），
+    多类型提交按类型标签子文件夹分段（type_materials），
     返回 base64 数据，以及报销表 Excel 的下载链接。
     """
     import zipfile, base64 as b64, mimetypes
-    from reimbursement_types import MATERIALS as _MATERIALS
+    from reimbursement_types import MATERIALS as _MATERIALS, TYPE_LABELS as _TYPE_LABELS
 
     fpath = os.path.join(SUBMISSIONS_DIR, filename)
     if not os.path.isfile(fpath) or not filename.endswith(".zip"):
         raise HTTPException(404, "文件不存在")
 
     folder_to_key = {cfg["zip_folder"]: key for key, cfg in _MATERIALS.items()}
+    label_to_type = {v: k for k, v in _TYPE_LABELS.items()}
     materials: dict[str, list] = {key: [] for key in _MATERIALS}
+    type_materials: dict[str, dict] = {}
     form = None
+
+    def _entry(data: bytes, name: str) -> dict:
+        if name.lower().endswith(".pdf"):
+            data = _strip_pdf_encryption(data)
+        mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        return {"name": name, "data_url": f"data:{mime};base64,{b64.b64encode(data).decode()}"}
 
     with zipfile.ZipFile(fpath, "r") as zf:
         for info in zf.infolist():
@@ -850,26 +944,46 @@ async def api_preview_submission(filename: str):
                 continue
             data = zf.read(info.filename)
             name = os.path.basename(info.filename)
-            folder = info.filename.split("/")[0]
-            key = folder_to_key.get(folder)
-            if key:
-                # 兼容历史提交：加密 PDF 预览时兜底解密
-                if name.lower().endswith(".pdf"):
-                    data = _strip_pdf_encryption(data)
-                mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
-                materials[key].append({
-                    "name": name,
-                    "data_url": f"data:{mime};base64,{b64.b64encode(data).decode()}",
-                })
-            elif folder == "报销表":
-                form = {
-                    "name": name,
-                    "download_url": f"/api/v1/submissions/download/{filename}",
-                }
+            parts = info.filename.split("/")
+            if len(parts) >= 3 and parts[0] in label_to_type:
+                # 多类型提交：{类型标签}/{材料文件夹}/文件
+                rtype = label_to_type[parts[0]]
+                key = folder_to_key.get(parts[1])
+                if key:
+                    entry = _entry(data, name)
+                    type_materials.setdefault(rtype, {}).setdefault(key, []).append(entry)
+                    materials[key].append(entry)
+            else:
+                # 历史平铺结构
+                folder = parts[0]
+                key = folder_to_key.get(folder)
+                if key:
+                    materials[key].append(_entry(data, name))
+                elif folder == "报销表":
+                    form = {
+                        "name": name,
+                        "download_url": f"/api/v1/submissions/download/{filename}",
+                    }
+
+    # 无分段（历史平铺 ZIP）：按 DB 类型兜底生成 type_materials
+    if not type_materials:
+        types_list = ["vat"]
+        from database import get_connection as _get_conn
+        _conn2 = _get_conn()
+        try:
+            with _conn2.cursor() as _cur2:
+                _cur2.execute("SELECT reimb_types FROM submissions WHERE zip_filename = %s", (filename,))
+                row = _cur2.fetchone()
+                if row and row[0] and isinstance(row[0], list) and row[0]:
+                    types_list = row[0]
+        finally:
+            _conn2.close()
+        type_materials = {types_list[0]: materials}
 
     return {
         "success": True,
         "materials": materials,
+        "type_materials": type_materials,
         # 兼容旧字段名
         "invoices": materials["invoices"],
         "evidences": materials["evidence"],

@@ -1,15 +1,17 @@
 import { useState, Fragment } from 'react';
 import DetailTable from '../components/DetailTable';
 import StepIndicator from '../components/StepIndicator';
-import { ReimbursementFormData } from '../types';
+import { ReimbursementFormData, ReimbursementType } from '../types';
 import { TYPE_MATERIALS, materialFor } from '../config/materials';
-import type { MaterialFilesState } from '../App';
+import type { TypeMaterialsState } from '../App';
+import { emptyMaterialEntry } from '../App';
+import TypeBadges from '../components/TypeBadges';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
 
 interface Props {
   formData: ReimbursementFormData;
-  materials: MaterialFilesState;
+  materials: TypeMaterialsState;
   userEmail?: string;
   submitResult: { message: string; zip_filename: string } | null;
   setSubmitResult: (r: { message: string; zip_filename: string } | null) => void;
@@ -34,7 +36,10 @@ export default function ReviewSubmit({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [downloading, setDownloading] = useState(false);
-  const reimbType = formData.type || 'vat';
+  // 本次申请的类型（旧数据回退：从发票标签去重）
+  const types: ReimbursementType[] = formData.types?.length
+    ? formData.types
+    : (formData.invoices.length ? Array.from(new Set(formData.invoices.map(i => i.reimb_type))) : ['vat']);
 
   const handleDownloadExcel = async () => {
     setDownloading(true);
@@ -66,7 +71,7 @@ export default function ReviewSubmit({
     setSubmitError('');
 
     const form = new FormData();
-    form.append('type', reimbType);
+    form.append('types_json', JSON.stringify(types));
     form.append('previous_zip', formData.previous_zip || '');
     form.append('activity_name', formData.activity_name);
     form.append('org_name', formData.org_name);
@@ -79,9 +84,13 @@ export default function ReviewSubmit({
     form.append('alipay_account', formData.alipay_account);
     form.append('user_email', userEmail);
 
-    for (const key of TYPE_MATERIALS[reimbType]) {
-      form.append(`existing_${key}_paths`, JSON.stringify(materials[key].existingPaths));
-      materials[key].files.forEach(f => form.append(`${key}_files`, f));
+    // 按类型分别提交材料字段，避免不同类型共用材料 key 互相覆盖
+    for (const t of types) {
+      for (const key of TYPE_MATERIALS[t]) {
+        const entry = materials[t]?.[key] ?? emptyMaterialEntry();
+        form.append(`existing_${t}_${key}_paths`, JSON.stringify(entry.existingPaths));
+        entry.files.forEach(f => form.append(`${t}_${key}_files`, f));
+      }
     }
 
     try {
@@ -159,7 +168,7 @@ export default function ReviewSubmit({
             {/* 每张发票 */}
             {formData.invoices.map((inv, idx) => (
               <div className="preview-section" key={idx}>
-                <h3><Icon name="receipt" size={14} /> 发票 {idx + 1}</h3>
+                <h3><Icon name="receipt" size={14} /> 发票 {idx + 1} <TypeBadges types={[inv.reimb_type]} small /></h3>
                 <div className="preview-grid">
                   <span className="label">购买方</span>
                   <span className="value">
@@ -216,27 +225,27 @@ export default function ReviewSubmit({
             <div className="preview-section">
               <h3>上传材料</h3>
               <div className="preview-grid">
-                {TYPE_MATERIALS[reimbType].map(k => {
-                  const entry = materials[k];
+                {types.flatMap(t => TYPE_MATERIALS[t].map(k => {
+                  const entry = materials[t]?.[k] ?? emptyMaterialEntry();
                   return (
-                    <Fragment key={k}>
-                      <span className="label">{materialFor(reimbType, k).label}</span>
+                    <Fragment key={`${t}_${k}`}>
+                      <span className="label"><TypeBadges types={[t]} small /> {materialFor(t, k).label}</span>
                       <span className="value">{entry.existingUrls.length + entry.files.length} 张</span>
                     </Fragment>
                   );
-                })}
+                }))}
               </div>
-              {TYPE_MATERIALS[reimbType].map(k => {
-                const entry = materials[k];
-                const cfg = materialFor(reimbType, k);
+              {types.flatMap(t => TYPE_MATERIALS[t].map(k => {
+                const entry = materials[t]?.[k] ?? emptyMaterialEntry();
+                const cfg = materialFor(t, k);
                 if (entry.existingUrls.length + entry.files.length === 0) return null;
                 return (
-                  <div className="file-list" key={k} style={{ marginTop: 8 }}>
+                  <div className="file-list" key={`${t}_${k}`} style={{ marginTop: 8 }}>
                     {entry.existingUrls.map((_, i) => (<div key={`e_${i}`} className="file-chip"><Icon name={cfg.icon} size={14} /> {cfg.label}_{i + 1} (原有)</div>))}
                     {entry.files.map((f, i) => (<div key={i} className="file-chip"><Icon name={cfg.icon} size={14} /> {f.name}</div>))}
                   </div>
                 );
-              })}
+              }))}
             </div>
           </div>
 

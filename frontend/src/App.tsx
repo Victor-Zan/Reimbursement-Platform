@@ -16,9 +16,8 @@ import UploadMaterials from './pages/UploadMaterials';
 import FillForm from './pages/FillForm';
 import ReviewSubmit from './pages/ReviewSubmit';
 import HomePage from './pages/HomePage';
-import TypeSelectPage from './pages/TypeSelectPage';
 import { OCRResult, ReimbursementFormData, InvoiceSection, DetailRow, ReimbursementType, MaterialKey } from './types';
-import { MATERIALS } from './config/materials';
+import { SELECTABLE_TYPES } from './config/materials';
 import { useFeedback } from './components/Feedback';
 
 const STORAGE_KEY = 'reimbursement_auth';
@@ -30,16 +29,16 @@ const todayStr = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
-function makeEmptyInvoice(): InvoiceSection {
+function makeEmptyInvoice(type: ReimbursementType): InvoiceSection {
   return {
     buyer_name: '', buyer_tax_id: '', buyer_name_valid: false, buyer_tax_id_valid: false,
-    invoice_date: '', invoice_total: 0, reimbursement_amount: 0, handler: '',
+    invoice_date: '', invoice_total: 0, reimbursement_amount: 0, handler: '', reimb_type: type,
     items: [{ name: '', unit_price: 0, quantity: 1, amount: 0, purchase_channel: '网购', reusable: '否', source_invoice_item: false }],
   };
 }
 
 const emptyForm: ReimbursementFormData = {
-  type: 'vat',
+  types: [],
   activity_name: '', org_name: '', activity_end_date: todayStr(),
   reimbursement_date: todayStr(),
   invoices: [], actual_total: 0,
@@ -48,13 +47,11 @@ const emptyForm: ReimbursementFormData = {
 
 /** 单种材料的向导状态：新上传文件 + 重编辑场景下的原有文件 */
 export interface MaterialEntry { files: File[]; existingUrls: string[]; existingPaths: string[]; }
-export type MaterialFilesState = Record<MaterialKey, MaterialEntry>;
+/** 多类型材料状态：{类型: {材料key: 状态}} */
+export type TypeMaterialsState = Partial<Record<ReimbursementType, Partial<Record<MaterialKey, MaterialEntry>>>>;
 
-const emptyMaterials = (): MaterialFilesState => {
-  const entries = {} as MaterialFilesState;
-  (Object.keys(MATERIALS) as MaterialKey[]).forEach(k => { entries[k] = { files: [], existingUrls: [], existingPaths: [] }; });
-  return entries;
-};
+export const emptyMaterialEntry = (): MaterialEntry => ({ files: [], existingUrls: [], existingPaths: [] });
+const emptyMaterials = (): TypeMaterialsState => ({});
 
 function loadAuth(): { token: string; user: any } | null {
   try {
@@ -78,26 +75,30 @@ export default function App() {
   const [auth, setAuth] = useState<{ token: string; user: any } | null>(loadAuth);
 
   // ---- OCR / Form state (shared across wizard steps) ----
-  const [ocrResults, setOcrResults] = useState<OCRResult[]>([]);
+  const [ocrResults, setOcrResults] = useState<Partial<Record<ReimbursementType, OCRResult[]>>>({});
   const [formData, setFormData] = useState<ReimbursementFormData>(emptyForm);
-  const [materials, setMaterials] = useState<MaterialFilesState>(emptyMaterials);
+  const [materials, setMaterials] = useState<TypeMaterialsState>(emptyMaterials);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ message: string; zip_filename: string } | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
 
-  const resetAll = useCallback((type: ReimbursementType = 'vat') => {
+  const resetAll = useCallback(() => {
     // 每次新申请都刷新当天日期（跨天后不陈旧）
-    setFormData({ ...emptyForm, type, activity_end_date: todayStr(), reimbursement_date: todayStr() });
-    setOcrResults([]); setMaterials(emptyMaterials());
+    setFormData({ ...emptyForm, activity_end_date: todayStr(), reimbursement_date: todayStr() });
+    setOcrResults({}); setMaterials(emptyMaterials());
     setSubmitResult(null); setDraftId(null);
   }, []);
 
-  const setMaterialFiles = useCallback((key: MaterialKey, files: File[]) => {
-    setMaterials(p => ({ ...p, [key]: { ...p[key], files } }));
+  const setMaterialFiles = useCallback((type: ReimbursementType, key: MaterialKey, files: File[]) => {
+    setMaterials(p => ({ ...p, [type]: { ...p[type], [key]: { ...emptyMaterialEntry(), ...p[type]?.[key], files } } }));
   }, []);
 
-  const clearMaterialExisting = useCallback((key: MaterialKey) => {
-    setMaterials(p => ({ ...p, [key]: { ...p[key], existingUrls: [], existingPaths: [] } }));
+  const setOcrResultsByType = useCallback((type: ReimbursementType, results: OCRResult[]) => {
+    setOcrResults(p => ({ ...p, [type]: results }));
+  }, []);
+
+  const clearMaterialExisting = useCallback((type: ReimbursementType, key: MaterialKey) => {
+    setMaterials(p => ({ ...p, [type]: { ...p[type], [key]: { ...emptyMaterialEntry(), ...p[type]?.[key], existingUrls: [], existingPaths: [] } } }));
   }, []);
 
   const handleLogin = useCallback((token: string, user: any) => {
@@ -134,8 +135,15 @@ export default function App() {
   }, [formData, ocrResults, draftId, auth, location.pathname]);
 
   const restoreDraft = useCallback((draft: any) => {
-    // 旧草稿无 type 时兜底 vat
-    setFormData({ ...emptyForm, ...(draft.form_data || emptyForm) }); setOcrResults(draft.ocr_results || []);
+    // 旧草稿迁移：type → types 数组；发票补类型标签；OCR 结果按类型打包
+    const raw: any = { ...(draft.form_data || emptyForm) };
+    const types: ReimbursementType[] = (raw.types?.length ? raw.types : (raw.type ? [raw.type] : ['vat']))
+      .filter((t: string) => ['vat', 'insurance', 'travel', 'bulk'].includes(t)) as ReimbursementType[];
+    const invoices: InvoiceSection[] = (raw.invoices || []).map((inv: any) => ({ ...inv, reimb_type: inv.reimb_type || types[0] }));
+    setFormData({ ...emptyForm, ...raw, types, invoices });
+    const ocr: any = draft.ocr_results || {};
+    setOcrResults(Array.isArray(ocr) ? { [types[0]]: ocr } : ocr);
+    setMaterials(emptyMaterials());
     setDraftId(draft.id); setSubmitResult(null);
     const step = draft.current_step || 1;
     navigate(step === 1 ? '/member/upload' : step === 2 ? '/member/fill' : '/member/review');
@@ -169,8 +177,8 @@ export default function App() {
       return { ...p, invoices, actual_total: total };
     });
   };
-  const addInvoice = useCallback(() => {
-    setFormData(p => ({ ...p, invoices: [...p.invoices, makeEmptyInvoice()] }));
+  const addInvoice = useCallback((type: ReimbursementType) => {
+    setFormData(p => ({ ...p, invoices: [...p.invoices, makeEmptyInvoice(type)] }));
   }, []);
   const removeInvoice = useCallback((invIndex: number) => {
     setFormData(p => {
@@ -179,45 +187,71 @@ export default function App() {
       return { ...p, invoices, actual_total: total };
     });
   }, []);
-  const applyOCRResults = useCallback((results: OCRResult[]) => {
+  // OCR 结果只替换所属类型的发票区块，其他类型的发票保留
+  const applyOCRResults = useCallback((type: ReimbursementType, results: OCRResult[]) => {
     if (!results.length) return;
-    const invoices: InvoiceSection[] = results.map(r => ({
+    const sections: InvoiceSection[] = results.map(r => ({
       buyer_name: r.buyer_name, buyer_tax_id: r.buyer_tax_id, buyer_name_valid: r.buyer_name_valid, buyer_tax_id_valid: r.buyer_tax_id_valid,
-      invoice_date: r.invoice_date, invoice_total: r.invoice_total, reimbursement_amount: 0, handler: '',
+      invoice_date: r.invoice_date, invoice_total: r.invoice_total, reimbursement_amount: 0, handler: '', reimb_type: type,
       items: r.items.length ? r.items.map(item => ({ name: item.name, unit_price: item.unit_price, quantity: item.quantity, amount: item.amount, purchase_channel: '网购', reusable: '否', source_invoice_item: true }))
         : [{ name: '', unit_price: 0, quantity: 1, amount: 0, purchase_channel: '网购', reusable: '否', source_invoice_item: false }],
     }));
-    let total = 0; for (const inv of invoices) total += inv.reimbursement_amount || 0;
-    setFormData(p => ({ ...p, invoices, actual_total: total }));
+    setFormData(p => {
+      const invoices = p.invoices.filter(inv => inv.reimb_type !== type);
+      const firstIdx = p.invoices.findIndex(inv => inv.reimb_type === type);
+      if (firstIdx >= 0) invoices.splice(firstIdx, 0, ...sections); else invoices.push(...sections);
+      let total = 0; for (const inv of invoices) total += inv.reimbursement_amount || 0;
+      return { ...p, invoices, actual_total: total };
+    });
   }, []);
 
-  const enterType = useCallback((type: ReimbursementType) => {
-    resetAll(type);
+  // 进入报销向导（类型在 step1 标签页中选择）
+  const enterWizard = useCallback(() => {
+    resetAll();
     navigate('/member/upload');
   }, [resetAll, navigate]);
 
   // 打回重编辑：恢复表单、原有材料文件与来源 ZIP（重审标记用）
   const handleReEdit = useCallback((data: any) => {
-    const restored = { ...emptyForm, ...(data.form_data || data) };
+    const raw: any = { ...(data.form_data || data) };
+    const types: ReimbursementType[] = (raw.types?.length ? raw.types : (raw.type ? [raw.type] : ['vat']))
+      .filter((t: string) => ['vat', 'insurance', 'travel', 'bulk'].includes(t)) as ReimbursementType[];
+    const invoices: InvoiceSection[] = (raw.invoices || []).map((inv: any) => ({ ...inv, reimb_type: inv.reimb_type || types[0] }));
+    const restored = { ...emptyForm, ...raw, types, invoices };
     setFormData({ ...restored, previous_zip: data._previousZip || restored.previous_zip || '' });
-    setSubmitResult(null);
+    setSubmitResult(null); setOcrResults({});
     const existing = data._materials || {};
     setMaterials(p => {
-      const next = { ...p };
-      (Object.keys(next) as MaterialKey[]).forEach(k => {
+      const next: TypeMaterialsState = { ...p };
+      (Object.keys(existing) as string[]).forEach(k => {
+        // 多类型数据键为 "type:key"；旧单类型为裸材料 key（归入第一个类型）
         const e = existing[k];
-        if (e) next[k] = { ...next[k], existingUrls: e.urls || [], existingPaths: e.paths || [] };
+        const [t, key] = (k.includes(':') ? k.split(':') : [types[0], k]) as [ReimbursementType, MaterialKey];
+        if (e) next[t] = { ...next[t], [key]: { ...emptyMaterialEntry(), ...next[t]?.[key], existingUrls: e.urls || [], existingPaths: e.paths || [] } };
       });
       return next;
     });
     navigate(data._reEditStep === 1 ? '/member/upload' : '/member/fill');
   }, [navigate]);
 
+  // step1 → step2：确定本次申请包含的类型（有上传材料或手工发票区块的类型）
+  const finalizeTypes = useCallback(() => {
+    const active = SELECTABLE_TYPES.filter(t => {
+      const tmat = materials[t] || {};
+      const hasFiles = Object.values(tmat).some(e => (e?.files.length || 0) + (e?.existingUrls.length || 0) + (e?.existingPaths.length || 0) > 0);
+      const hasInvoices = formData.invoices.some(i => i.reimb_type === t);
+      return hasFiles || hasInvoices;
+    });
+    setFormData(p => ({ ...p, types: active }));
+    navigate('/member/fill');
+  }, [materials, formData.invoices, navigate]);
+
   const wizardProps = {
-    reimbType: formData.type,
     materials, setMaterialFiles, clearMaterialExisting,
-    ocrResults, setOcrResults, ocrLoading, setOcrLoading, applyOCRResults,
+    ocrResults, setOcrResults: setOcrResultsByType, ocrLoading, setOcrLoading, applyOCRResults,
     onAddManualInvoice: addInvoice,
+    invoiceSectionCounts: Object.fromEntries(SELECTABLE_TYPES.map(t => [t, formData.invoices.filter(i => i.reimb_type === t).length])) as Partial<Record<ReimbursementType, number>>,
+    onNext: finalizeTypes,
   };
 
   return (
@@ -227,10 +261,9 @@ export default function App() {
       <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      <Route path="/member" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><HomePage onEnterVat={() => enterType('vat')} onEnterOther={() => navigate('/member/type-select')} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onReEdit={handleReEdit} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><HomePage onEnterWizard={enterWizard} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onReEdit={handleReEdit} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/appeals" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><MemberAppeals user={auth.user} /></div></> : <Navigate to="/login" />} />
-      <Route path="/member/type-select" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><TypeSelectPage onEnterType={enterType} /></div></> : <Navigate to="/login" />} />
-      <Route path="/member/upload" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><UploadMaterials {...wizardProps} invoiceSectionCount={formData.invoices.length} onNext={() => navigate('/member/fill')} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member/upload" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><UploadMaterials {...wizardProps} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/fill" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onAddInvoice={addInvoice} onRemoveInvoice={removeInvoice} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/review" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewSubmit formData={formData} materials={materials} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></div></> : <Navigate to="/login" />} />
       <Route path="/reviewer" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewerDashboard user={auth.user} /></div></> : <Navigate to="/login" />} />

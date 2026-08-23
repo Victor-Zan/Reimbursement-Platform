@@ -2063,6 +2063,72 @@ td input.error {
   flex-wrap: wrap;
 }
 
+/* ---- 27c. 多类型报销：类型标签页 / 徽章组 / 审核分列 ---- */
+.type-badges {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.type-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.type-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--fs-14);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.type-tab:hover { border-color: var(--primary-line); background: var(--primary-soft); }
+
+.type-tab.is-active {
+  border-color: var(--accent, var(--primary));
+  border-left: 3px solid var(--accent, var(--primary));
+  background: var(--gray-50);
+}
+
+.type-tab-count {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.review-columns {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.review-column {
+  border: var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  align-self: start;
+}
+
+.review-column-head {
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent, var(--primary));
+  border-bottom: var(--hairline);
+  background: var(--gray-50);
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+}
+
 /* ---- 27b. 意见反馈多选清单 ---- */
 .appeal-check-list {
   display: flex;

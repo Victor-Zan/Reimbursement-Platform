@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { typeLabel, typeColor } from '../config/materials';
+import { typesFrom } from '../config/materials';
+import TypeBadges from '../components/TypeBadges';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
 
 interface Props { user: any; }
-interface AppealItem { id: number; submission_zip: string; reimb_type?: string; reason: string; status: string; created_at: string; }
-interface SubmissionFile { filename: string; size: number; modified: string; reimb_type?: string; status?: string; }
+interface AppealItem { id: number; submission_zip: string; reimb_type?: string; reimb_types?: string[]; reason: string; status: string; created_at: string; }
+interface SubmissionFile { filename: string; size: number; modified: string; reimb_type?: string; reimb_types?: string[]; status?: string; }
 
 /** 社团成员端：意见反馈（申诉被打回的报销申请，可多选 + 共同理由）。 */
 export default function MemberAppeals({ user }: Props) {
@@ -64,12 +65,6 @@ export default function MemberAppeals({ user }: Props) {
   };
 
   const statusBadge = (s: string) => s === 'approved' ? <span className="badge badge-ok">已通过</span> : s === 'rejected' ? <span className="badge badge-error">已打回</span> : <span className="badge badge-warn">待处理</span>;
-  const typeBadge = (t?: string) => (
-    <span className="badge badge-neutral">
-      <span className="dot" style={{ background: typeColor(t) }} />
-      {typeLabel(t)}
-    </span>
-  );
 
   return (
     <div>
@@ -90,7 +85,7 @@ export default function MemberAppeals({ user }: Props) {
                 <strong><Icon name="archive" size={16} /> {a.submission_zip}</strong>
                 <span className="draft-meta">{a.reason} · {a.created_at.slice(0, 19).replace('T', ' ')}</span>
               </div>
-              {typeBadge(a.reimb_type)}
+              <TypeBadges types={typesFrom(a)} />
               {statusBadge(a.status)}
             </div>
           ))}</div>}
@@ -111,7 +106,7 @@ export default function MemberAppeals({ user }: Props) {
                          disabled={blocked}
                          onChange={e => toggleSelect(s.filename, e.target.checked)} />
                   <span className="form-check-label">{s.filename}</span>
-                  {typeBadge(s.reimb_type)}
+                  <TypeBadges types={typesFrom(s)} />
                   {blocked && <span className="badge badge-purple">反馈处理中</span>}
                 </label>
               );

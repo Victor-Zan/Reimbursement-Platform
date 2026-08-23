@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { CSSProperties } from 'react';
-import { TYPE_MATERIALS, materialFor, typeLabel, typeColor, TYPE_CONFIGS, MATERIALS } from '../config/materials';
+import { TYPE_MATERIALS, materialFor, typesFrom, materialByKey, typeLabel, typeColor, TYPE_CONFIGS } from '../config/materials';
 import type { ReimbursementType, MaterialKey } from '../types';
 import { TIME_RANGES, inTimeRange } from '../utils/timeRange';
+import TypeBadges from '../components/TypeBadges';
 import Icon from '../components/Icon';
 
-interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; reimb_type?: string; }
+interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; reimb_type?: string; reimb_types?: string[]; }
 interface PreviewFile { name: string; data_url: string; }
-interface PreviewData { materials?: Record<string, PreviewFile[]>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string } | null; }
+interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string } | null; }
 
-/** 审核窗口内的视图：清单 / 报销表 / 某个材料 */
-type ReviewView = 'list' | 'form' | MaterialKey;
+/** 审核窗口内的视图：清单 / 报销表 / 某类型某材料（"type:key"） */
+type ReviewView = 'list' | 'form' | string;
 
 /** PDF 预览：base64 转 Blob URL 再渲染，附新窗口打开兜底 */
 function PdfPreview({ dataUrl, name }: { dataUrl: string; name: string }) {
@@ -83,15 +84,18 @@ export default function ReviewerHistory() {
   };
 
   const selectedSubmission = submissions.find(s => s.filename === selected);
-  const reimbType: ReimbursementType = (selectedSubmission?.reimb_type as ReimbursementType) || 'vat';
-  const accent = typeColor(reimbType);
+  const types: ReimbursementType[] = typesFrom(selectedSubmission);
+  const accent = typeColor(types[0]);
 
-  // 某材料组的预览文件（兼容旧版后端只返回 invoices/evidences 的响应）
-  const filesFor = (key: MaterialKey): PreviewFile[] => {
+  // 某类型某材料的预览文件（多类型读 type_materials；单类型回退旧版平铺键）
+  const filesFor = (type: ReimbursementType, key: MaterialKey): PreviewFile[] => {
     if (!preview) return [];
-    if (preview.materials) return preview.materials[key] || [];
-    if (key === 'invoices') return preview.invoices || [];
-    if (key === 'evidence') return preview.evidences || [];
+    if (preview.type_materials?.[type]?.[key]) return preview.type_materials[type][key];
+    if (types.length === 1 && type === types[0]) {
+      if (preview.materials) return preview.materials[key] || [];
+      if (key === 'invoices') return preview.invoices || [];
+      if (key === 'evidence') return preview.evidences || [];
+    }
     return [];
   };
 
@@ -119,34 +123,39 @@ export default function ReviewerHistory() {
     if (s.status !== 'approved' && s.status !== 'rejected') return false;
     if (statusFilter === '已通过' && s.status !== 'approved') return false;
     if (statusFilter === '已打回' && s.status !== 'rejected') return false;
-    if (typeFilter !== '全部' && (s.reimb_type || 'vat') !== typeFilter) return false;
+    if (typeFilter !== '全部' && !typesFrom(s).includes(typeFilter as ReimbursementType)) return false;
     if (!inTimeRange(timeRange, s.modified)) return false;
     return true;
   });
   const formatSize = (b: number) => b < 1024*1024 ? `${(b/1024).toFixed(1)} KB` : `${(b/(1024*1024)).toFixed(1)} MB`;
   const statusBadge = (s: string) => s === 'approved' ? <span className="badge badge-ok">已通过</span> : <span className="badge badge-error">已打回</span>;
-  const typeBadge = (t?: string) => (
-    <span className="badge badge-neutral">
-      <span className="dot" style={{ background: typeColor(t) }} />
-      {typeLabel(t)}
-    </span>
-  );
 
-  // ---- 查看窗口：清单视图 ----
+  // ---- 查看窗口：清单视图（多类型按类型分列） ----
   const renderList = () => (
     <>
       <p className="card-sub" style={{ marginBottom: 12 }}>点击材料查看完整内容</p>
-      {TYPE_MATERIALS[reimbType].map(key => {
-        const cfg = materialFor(reimbType, key);
-        const files = filesFor(key);
-        return (
-          <div key={key} className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer', marginBottom: 8 } as CSSProperties}
-               onClick={() => setView(key)}>
-            <div className="draft-info"><strong><Icon name={cfg.icon} size={16} /> {cfg.label}</strong><span className="draft-meta">{files.length} 份</span></div>
-            <Icon name="arrow-right" size={16} />
+      <div className="review-columns" style={{ gridTemplateColumns: `repeat(${types.length}, minmax(220px, 1fr))` }}>
+        {types.map(t => (
+          <div key={t} className="review-column">
+            <div className="review-column-head" style={{ '--accent': typeColor(t) } as CSSProperties}>
+              <TypeBadges types={[t]} />
+            </div>
+            <div style={{ padding: 8 }}>
+              {TYPE_MATERIALS[t].map(key => {
+                const cfg = materialFor(t, key);
+                const files = filesFor(t, key);
+                return (
+                  <div key={key} className="submission-item accent-left" style={{ '--accent': typeColor(t), cursor: 'pointer', marginBottom: 8 } as CSSProperties}
+                       onClick={() => setView(`${t}:${key}`)}>
+                    <div className="draft-info"><strong><Icon name={cfg.icon} size={16} /> {cfg.label}</strong><span className="draft-meta">{files.length} 份</span></div>
+                    <Icon name="arrow-right" size={16} />
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        );
-      })}
+        ))}
+      </div>
       {preview?.form && (
         <div className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer' } as CSSProperties} onClick={() => setView('form')}>
           <div className="draft-info"><strong><Icon name="clipboard" size={16} /> 报销表</strong><span className="draft-meta">{preview.form.name}</span></div>
@@ -156,7 +165,7 @@ export default function ReviewerHistory() {
     </>
   );
 
-  // ---- 查看窗口：材料详情视图 ----
+  // ---- 查看窗口：材料详情视图（view 为 "type:key"） ----
   const renderDetail = () => {
     if (view === 'form') {
       return (
@@ -167,13 +176,13 @@ export default function ReviewerHistory() {
         </div>
       );
     }
-    const key = view as MaterialKey;
-    const cfg = materialFor(reimbType, key);
-    const files = filesFor(key);
+    const [t, k] = (view.includes(':') ? view.split(':') : [types[0], view]) as [ReimbursementType, MaterialKey];
+    const cfg = materialFor(t, k);
+    const files = filesFor(t, k);
     return (
       <div>
         <button className="btn btn-ghost btn-sm" onClick={() => setView('list')} style={{ marginBottom: 12 }}><Icon name="arrow-left" size={14} /> 返回材料清单</button>
-        <h4 className="section-title accent-left" style={{ '--accent': accent, paddingLeft: 8, borderLeftWidth: 3 } as CSSProperties}><Icon name={cfg.icon} size={16} /> {cfg.label}（{files.length} 份）</h4>
+        <h4 className="section-title accent-left" style={{ '--accent': typeColor(t), paddingLeft: 8, borderLeftWidth: 3 } as CSSProperties}><TypeBadges types={[t]} small /> {cfg.label}（{files.length} 份）</h4>
         {files.length === 0 && <p className="empty">该材料无文件</p>}
         <div className="thumb-grid">
           {files.map((f, i) => (
@@ -194,14 +203,15 @@ export default function ReviewerHistory() {
   };
 
   const lightboxFile = lightbox ? lightbox.files[lightbox.index] : null;
-  // 审核批注只读展示
+  // 审核批注只读展示（多类型批注 key 为 "type:key"）
   const annotatorComments = review ? (
     <>
       {review.invoice_comment && <p><Icon name="receipt" size={14} /> 发票：{review.invoice_comment}</p>}
       {review.evidence_comment && <p><Icon name="camera" size={14} /> 凭证：{review.evidence_comment}</p>}
       {Object.entries((review.material_comments || {}) as Record<string, string>).filter(([, c]) => c).map(([k, c]) => {
-        const cfg = MATERIALS[k as MaterialKey];
-        return <p key={k}>{cfg ? <><Icon name={cfg.icon} size={14} /> {cfg.label}</> : k}：{c}</p>;
+        const m = materialByKey(k);
+        const label = m.cfg ? (m.type ? `${typeLabel(m.type)}·${m.cfg.label}` : m.cfg.label) : k;
+        return <p key={k}>{m.cfg ? <><Icon name={m.cfg.icon} size={14} /> {label}</> : k}：{c}</p>;
       })}
       {review.form_comment && <p><Icon name="clipboard" size={14} /> 报销表：{review.form_comment}</p>}
     </>
@@ -234,13 +244,13 @@ export default function ReviewerHistory() {
           {filteredSubmissions.map(s => (
             <div key={s.filename}
                  className={`submission-item ${selected === s.filename ? 'is-selected' : 'accent-left'}`}
-                 style={{ '--accent': typeColor(s.reimb_type) } as CSSProperties}
+                 style={{ '--accent': typeColor(typesFrom(s)[0]) } as CSSProperties}
                  onClick={() => openView(s.filename)}>
               <div className="draft-info">
                 <strong><Icon name="archive" size={16} /> {s.filename}</strong>
                 <span className="draft-meta">{formatSize(s.size)} · {s.modified.slice(0,19).replace('T',' ')}{s.reviewer_email ? ` · 审核人：${s.reviewer_email}` : ''}</span>
               </div>
-              {typeBadge(s.reimb_type)}
+              <TypeBadges types={typesFrom(s)} />
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {statusBadge(s.status)}
                 {s.status === 'approved' && (
@@ -263,7 +273,7 @@ export default function ReviewerHistory() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
                 <h3 className="modal-title" style={{ fontSize: 16 }}>历史审核：{selected}</h3>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {typeBadge(selectedSubmission?.reimb_type)}
+                  <TypeBadges types={types} />
                   {statusBadge(selectedSubmission?.status || '')}
                 </div>
               </div>

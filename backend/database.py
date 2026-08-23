@@ -140,6 +140,26 @@ def init_db():
             cur.execute("UPDATE submissions SET updated_at = created_at WHERE updated_at IS NULL")
             cur.execute("ALTER TABLE submissions ALTER COLUMN updated_at SET DEFAULT NOW()")
 
+            # 多类型报销：类型数组（新行写入；旧行从 reimb_type 回填；新代码行从 form_data 自愈）
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE submissions ADD COLUMN reimb_types JSONB DEFAULT '[]'::jsonb;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
+            cur.execute("""
+                UPDATE submissions
+                SET reimb_types = jsonb_build_array(COALESCE(NULLIF(reimb_type, ''), 'vat'))
+                WHERE reimb_types IS NULL OR reimb_types = '[]'::jsonb;
+            """)
+            cur.execute("""
+                UPDATE submissions
+                SET reimb_types = form_data->'form'->'types'
+                WHERE jsonb_typeof(form_data->'form'->'types') = 'array'
+                  AND jsonb_array_length(form_data->'form'->'types') > 0
+                  AND reimb_types IS DISTINCT FROM form_data->'form'->'types';
+            """)
+
             # ---- 审核批注表（挂 submission_id）----
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS review_annotations (
@@ -250,11 +270,17 @@ def init_db():
                     """, (z, "{}", z))
 
             # 7. 历史数据回填（幂等、自愈）
-            # 7a. 报销类型：从 form_data 提取，兜底 vat
+            # 7a. 报销类型冗余列：多类型用 'mixed'，单类型取首元素（由 reimb_types 派生，幂等）
             cur.execute("""
                 UPDATE submissions
-                SET reimb_type = COALESCE(NULLIF(form_data->'form'->>'type', ''), 'vat')
-                WHERE COALESCE(NULLIF(form_data->'form'->>'type', ''), 'vat') IS DISTINCT FROM reimb_type;
+                SET reimb_type = CASE
+                    WHEN jsonb_array_length(reimb_types) > 1 THEN 'mixed'
+                    ELSE COALESCE(NULLIF(reimb_types->>0, ''), 'vat')
+                END
+                WHERE CASE
+                    WHEN jsonb_array_length(reimb_types) > 1 THEN 'mixed'
+                    ELSE COALESCE(NULLIF(reimb_types->>0, ''), 'vat')
+                END IS DISTINCT FROM reimb_type;
             """)
             # 7b. 活动名称
             cur.execute("""

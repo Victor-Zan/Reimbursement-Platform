@@ -48,8 +48,13 @@ export const TYPE_CONFIGS: Record<ReimbursementType, TypeConfig> = {
   },
 };
 
-/** "其他类报销"入口下的三种类型（增值税在首页直接进入） */
-export const OTHER_TYPES: ReimbursementType[] = ['insurance', 'travel', 'bulk'];
+/** 报销申请中可选的三类（大量发票已并入普通增值税，仅历史数据保留展示） */
+export const SELECTABLE_TYPES: ReimbursementType[] = ['vat', 'insurance', 'travel'];
+
+/** step1 标签页显示名 */
+export const TAB_LABELS: Record<ReimbursementType, string> = {
+  vat: '普通增值税', insurance: '保险', travel: '出行', bulk: '大量发票',
+};
 
 export const MATERIALS: Record<MaterialKey, MaterialConfig> = {
   invoices: {
@@ -117,4 +122,29 @@ export function typeLabel(type?: string): string {
 /** 类型识别色（旧数据无 type 兜底增值税色） */
 export function typeColor(type?: string): string {
   return TYPE_CONFIGS[type as ReimbursementType]?.color || TYPE_CONFIGS.vat.color;
+}
+
+/** 从列表行数据取类型数组（reimb_types 数组优先，回退单值 reimb_type，再兜底 vat） */
+export function typesFrom(s?: { reimb_types?: string[]; reimb_type?: string }): ReimbursementType[] {
+  const raw = s?.reimb_types?.length ? s.reimb_types : [s?.reimb_type || 'vat'];
+  const filtered = raw.filter(t => TYPE_CONFIGS[t as ReimbursementType]) as ReimbursementType[];
+  return filtered.length ? filtered : ['vat'];
+}
+
+/** 解析材料批注 key：多类型为 "type:key"，旧数据为裸 key。返回 {type, key, cfg}，未知部分为 null。 */
+export function materialByKey(composite: string): {
+  type: ReimbursementType | null; key: MaterialKey | null; cfg: MaterialConfig | null;
+} {
+  const idx = composite.indexOf(':');
+  if (idx > 0) {
+    const t = composite.slice(0, idx) as ReimbursementType;
+    const k = composite.slice(idx + 1) as MaterialKey;
+    if (TYPE_CONFIGS[t] && MATERIALS[k]) {
+      return { type: t, key: k, cfg: materialFor(t, k) };
+    }
+  }
+  if (MATERIALS[composite as MaterialKey]) {
+    return { type: null, key: composite as MaterialKey, cfg: MATERIALS[composite as MaterialKey] };
+  }
+  return { type: null, key: null, cfg: null };
 }

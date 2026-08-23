@@ -9,7 +9,7 @@ import secrets
 import zipfile
 from datetime import datetime
 
-from reimbursement_types import MATERIALS
+from reimbursement_types import MATERIALS, TYPE_LABELS, material_cfg
 
 
 def create_submission_package(
@@ -17,15 +17,17 @@ def create_submission_package(
     material_groups: dict[str, list[str]],
     output_dir: str,
     activity_name: str = "",
+    nested: bool = False,
 ) -> str:
     """
     将报销表与各材料打包为一个ZIP文件。
 
     Args:
         excel_path: 生成的报销表Excel路径
-        material_groups: 材料 key -> 文件路径列表（如 {"invoices": [...], "policy": [...]}）
+        material_groups: 单类型为 {材料key: 文件路径列表}；nested=True 时为 {类型: {材料key: 路径列表}}
         output_dir: 输出目录
         activity_name: 活动名称（用于文件命名）
+        nested: 多类型报销时按类型建子文件夹（{类型标签}/{材料文件夹}/...）
 
     Returns:
         str: 生成的ZIP文件路径
@@ -48,12 +50,22 @@ def create_submission_package(
         if os.path.exists(excel_path):
             zf.write(excel_path, f"报销表/{os.path.basename(excel_path)}")
 
-        # 各材料（按配置的文件夹名与编号前缀，按顺序编号）
-        for key, fpaths in material_groups.items():
-            cfg = MATERIALS[key]
+        def _write_material(zf, folder, prefix, fpaths):
             for i, fpath in enumerate(fpaths, 1):
                 if os.path.exists(fpath):
                     ext = os.path.splitext(fpath)[1]
-                    zf.write(fpath, f"{cfg['zip_folder']}/{cfg['zip_prefix']}_{i:02d}{ext}")
+                    zf.write(fpath, f"{folder}/{prefix}_{i:02d}{ext}")
+
+        if nested:
+            # 多类型：按类型标签建子文件夹（{类型}/{材料文件夹}/{前缀}_{编号}{ext}）
+            for rtype, groups in material_groups.items():
+                for key, fpaths in groups.items():
+                    cfg = material_cfg(rtype, key)
+                    _write_material(zf, f"{TYPE_LABELS[rtype]}/{cfg['zip_folder']}", cfg["zip_prefix"], fpaths)
+        else:
+            # 单类型：平铺文件夹（与历史提交一致）
+            for key, fpaths in material_groups.items():
+                cfg = MATERIALS[key]
+                _write_material(zf, cfg["zip_folder"], cfg["zip_prefix"], fpaths)
 
     return zip_path

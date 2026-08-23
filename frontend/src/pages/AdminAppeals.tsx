@@ -1,21 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { CSSProperties } from 'react';
-import { TYPE_MATERIALS, materialFor, typeLabel, typeColor, TYPE_CONFIGS, MATERIALS } from '../config/materials';
+import { TYPE_MATERIALS, materialFor, typesFrom, materialByKey, typeLabel, typeColor, TYPE_CONFIGS } from '../config/materials';
 import type { ReimbursementType, MaterialKey } from '../types';
+import TypeBadges from '../components/TypeBadges';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
 
 interface Props { user: any; }
-interface Appeal { id: number; submission_id: number | null; submission_zip: string; user_email: string; reason: string; status: string; admin_email: string; created_at: string; reimb_type?: string; submission_status?: string; }
+interface Appeal { id: number; submission_id: number | null; submission_zip: string; user_email: string; reason: string; status: string; admin_email: string; created_at: string; reimb_type?: string; reimb_types?: string[]; submission_status?: string; }
 interface PreviewFile { name: string; data_url: string; }
-interface PreviewData { materials?: Record<string, PreviewFile[]>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string } | null; }
+interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string } | null; }
 
 /** 报销表批注快捷模板 */
 const FORM_QUICK = ['已复核，同意报销', '维持审核员打回决定', '材料已核对，予以通过', '材料仍不符合要求，维持打回'];
 
-/** 审核窗口内的视图：清单 / 报销表 / 某个材料 */
-type ReviewView = 'list' | 'form' | MaterialKey;
+/** 审核窗口内的视图：清单 / 报销表 / 某类型某材料（"type:key"） */
+type ReviewView = 'list' | 'form' | string;
 
 /** PDF 预览：base64 转 Blob URL 再渲染，附新窗口打开兜底 */
 function PdfPreview({ dataUrl, name }: { dataUrl: string; name: string }) {
@@ -134,22 +135,27 @@ export default function AdminAppeals({ user }: Props) {
     setActionLoading(false);
   };
 
-  const reimbType: ReimbursementType = (selected?.reimb_type as ReimbursementType) || 'vat';
-  const accent = typeColor(reimbType);
+  const types: ReimbursementType[] = typesFrom(selected ?? undefined);
+  const accent = typeColor(types[0]);
   // 仅待处理申诉可裁定；已处理显示结果
   const canResolve = selected?.status === 'pending';
 
-  const filesFor = (key: MaterialKey): PreviewFile[] => {
+  // 某类型某材料的预览文件（多类型读 type_materials；单类型回退旧版平铺键）
+  const filesFor = (type: ReimbursementType, key: MaterialKey): PreviewFile[] => {
     if (!preview) return [];
-    if (preview.materials) return preview.materials[key] || [];
-    if (key === 'invoices') return preview.invoices || [];
-    if (key === 'evidence') return preview.evidences || [];
+    if (preview.type_materials?.[type]?.[key]) return preview.type_materials[type][key];
+    if (types.length === 1 && type === types[0]) {
+      if (preview.materials) return preview.materials[key] || [];
+      if (key === 'invoices') return preview.invoices || [];
+      if (key === 'evidence') return preview.evidences || [];
+    }
     return [];
   };
-  // 批注列映射：发票/凭证沿用旧列，报销表走 form_comment，其余材料走 material_comments JSONB
-  const commentFor = (key: MaterialKey | 'form'): [string, (v: string) => void] => {
+  // 批注列映射：单类型用裸 key；多类型用 "type:key"
+  const commentFor = (type: ReimbursementType, key: MaterialKey | 'form'): [string, (v: string) => void] => {
     if (key === 'form') return [formComment, setFormComment];
-    return [materialComments[key] || '', (v: string) => setMaterialComments(p => ({ ...p, [key]: v }))];
+    const ck = types.length === 1 ? key : `${type}:${key}`;
+    return [materialComments[ck] || '', (v: string) => setMaterialComments(p => ({ ...p, [ck]: v }))];
   };
 
   const hasUnsavedComments = !!(formComment || Object.values(materialComments).some(c => c && c.trim()));
@@ -181,34 +187,39 @@ export default function AdminAppeals({ user }: Props) {
     if (statusFilter === '待处理' && a.status !== 'pending') return false;
     if (statusFilter === '已通过' && a.status !== 'approved') return false;
     if (statusFilter === '已打回' && a.status !== 'rejected') return false;
-    if (typeFilter !== '全部' && (a.reimb_type || 'vat') !== typeFilter) return false;
+    if (typeFilter !== '全部' && !typesFrom(a).includes(typeFilter as ReimbursementType)) return false;
     return true;
   });
   const appealStatusBadge = (s: string) => s === 'approved' ? <span className="badge badge-ok">已通过</span> : s === 'rejected' ? <span className="badge badge-error">已打回</span> : <span className="badge badge-warn">待处理</span>;
-  const typeBadge = (t?: string) => (
-    <span className="badge badge-neutral">
-      <span className="dot" style={{ background: typeColor(t) }} />
-      {typeLabel(t)}
-    </span>
-  );
 
-  // ---- 处理窗口：材料清单视图 ----
+  // ---- 处理窗口：材料清单视图（多类型按类型分列） ----
   const renderList = () => (
     <>
       <p className="card-sub" style={{ marginBottom: 12 }}>点击材料查看完整内容并填写处理意见</p>
-      {TYPE_MATERIALS[reimbType].map(key => {
-        const cfg = materialFor(reimbType, key);
-        const files = filesFor(key);
-        const [comment] = commentFor(key);
-        return (
-          <div key={key} className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer', marginBottom: 8 } as CSSProperties}
-               onClick={() => setView(key)}>
-            <div className="draft-info"><strong><Icon name={cfg.icon} size={16} /> {cfg.label}</strong><span className="draft-meta">{files.length} 份</span></div>
-            {comment && comment.trim() && <span className="badge badge-gold" title="已填处理意见">已批注</span>}
-            <Icon name="arrow-right" size={16} />
+      <div className="review-columns" style={{ gridTemplateColumns: `repeat(${types.length}, minmax(220px, 1fr))` }}>
+        {types.map(t => (
+          <div key={t} className="review-column">
+            <div className="review-column-head" style={{ '--accent': typeColor(t) } as CSSProperties}>
+              <TypeBadges types={[t]} />
+            </div>
+            <div style={{ padding: 8 }}>
+              {TYPE_MATERIALS[t].map(key => {
+                const cfg = materialFor(t, key);
+                const files = filesFor(t, key);
+                const [comment] = commentFor(t, key);
+                return (
+                  <div key={key} className="submission-item accent-left" style={{ '--accent': typeColor(t), cursor: 'pointer', marginBottom: 8 } as CSSProperties}
+                       onClick={() => setView(`${t}:${key}`)}>
+                    <div className="draft-info"><strong><Icon name={cfg.icon} size={16} /> {cfg.label}</strong><span className="draft-meta">{files.length} 份</span></div>
+                    {comment && comment.trim() && <span className="badge badge-gold" title="已填处理意见">已批注</span>}
+                    <Icon name="arrow-right" size={16} />
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        );
-      })}
+        ))}
+      </div>
       {preview?.form && (
         <div className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer' } as CSSProperties} onClick={() => setView('form')}>
           <div className="draft-info"><strong><Icon name="clipboard" size={16} /> 报销表</strong><span className="draft-meta">{preview.form.name}</span></div>
@@ -219,7 +230,7 @@ export default function AdminAppeals({ user }: Props) {
     </>
   );
 
-  // ---- 处理窗口：材料详情视图 ----
+  // ---- 处理窗口：材料详情视图（view 为 "type:key"） ----
   const renderDetail = () => {
     if (view === 'form') {
       return (
@@ -231,14 +242,14 @@ export default function AdminAppeals({ user }: Props) {
         </div>
       );
     }
-    const key = view as MaterialKey;
-    const cfg = materialFor(reimbType, key);
-    const files = filesFor(key);
-    const [comment, setComment] = commentFor(key);
+    const [t, k] = (view.includes(':') ? view.split(':') : [types[0], view]) as [ReimbursementType, MaterialKey];
+    const cfg = materialFor(t, k);
+    const files = filesFor(t, k);
+    const [comment, setComment] = commentFor(t, k);
     return (
       <div>
         <button className="btn btn-ghost btn-sm" onClick={() => setView('list')} style={{ marginBottom: 12 }}><Icon name="arrow-left" size={14} /> 返回材料清单</button>
-        <h4 className="section-title accent-left" style={{ '--accent': accent, paddingLeft: 8, borderLeftWidth: 3 } as CSSProperties}><Icon name={cfg.icon} size={16} /> {cfg.label}（{files.length} 份）</h4>
+        <h4 className="section-title accent-left" style={{ '--accent': typeColor(t), paddingLeft: 8, borderLeftWidth: 3 } as CSSProperties}><TypeBadges types={[t]} small /> {cfg.label}（{files.length} 份）</h4>
         {files.length === 0 && <p className="empty">该材料无文件</p>}
         <div className="thumb-grid">
           {files.map((f, i) => (
@@ -260,14 +271,15 @@ export default function AdminAppeals({ user }: Props) {
   };
 
   const lightboxFile = lightbox ? lightbox.files[lightbox.index] : null;
-  // 审核员（或上次处理管理员）的批注展示
+  // 审核员（或上次处理管理员）的批注展示（多类型批注 key 为 "type:key"）
   const annotatorComments = review ? (
     <>
       {review.invoice_comment && <p><Icon name="receipt" size={14} /> 发票：{review.invoice_comment}</p>}
       {review.evidence_comment && <p><Icon name="camera" size={14} /> 凭证：{review.evidence_comment}</p>}
       {Object.entries((review.material_comments || {}) as Record<string, string>).filter(([, c]) => c).map(([k, c]) => {
-        const cfg = MATERIALS[k as MaterialKey];
-        return <p key={k}>{cfg ? <><Icon name={cfg.icon} size={14} /> {cfg.label}</> : k}：{c}</p>;
+        const m = materialByKey(k);
+        const label = m.cfg ? (m.type ? `${typeLabel(m.type)}·${m.cfg.label}` : m.cfg.label) : k;
+        return <p key={k}>{m.cfg ? <><Icon name={m.cfg.icon} size={14} /> {label}</> : k}：{c}</p>;
       })}
       {review.form_comment && <p><Icon name="clipboard" size={14} /> 报销表：{review.form_comment}</p>}
     </>
@@ -297,14 +309,14 @@ export default function AdminAppeals({ user }: Props) {
           {filteredAppeals.map(a => (
             <div key={a.id}
                  className={`submission-item ${selected?.id === a.id ? 'is-selected' : 'accent-left'}`}
-                 style={{ '--accent': typeColor(a.reimb_type) } as CSSProperties}
+                 style={{ '--accent': typeColor(typesFrom(a)[0]) } as CSSProperties}
                  onClick={() => openAppeal(a)}>
               <div className="draft-info">
                 <strong><Icon name="user" size={16} /> {a.user_email}</strong>
                 <span className="draft-meta"><Icon name="archive" size={13} /> {a.submission_zip} · {a.reason} · {a.created_at.slice(0, 19).replace('T', ' ')}</span>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                {typeBadge(a.reimb_type)}
+                <TypeBadges types={typesFrom(a)} />
                 {a.submission_status === 'resubmitted' && <span className="badge badge-purple">已重新提交</span>}
                 {appealStatusBadge(a.status)}
               </div>
@@ -322,7 +334,7 @@ export default function AdminAppeals({ user }: Props) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
                 <h3 className="modal-title" style={{ fontSize: 16 }}>处理意见：{selected.submission_zip}</h3>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {typeBadge(selected.reimb_type)}
+                  <TypeBadges types={types} />
                   {appealStatusBadge(selected.status)}
                   {selected.status !== 'pending' && selected.admin_email && <span className="draft-meta">处理人：{selected.admin_email}</span>}
                 </div>

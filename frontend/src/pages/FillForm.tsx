@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import DetailTable from '../components/DetailTable';
 import StepIndicator from '../components/StepIndicator';
-import { ReimbursementFormData, InvoiceSection, DetailRow, ValidationError } from '../types';
+import { ReimbursementFormData, InvoiceSection, DetailRow, ValidationError, ReimbursementType } from '../types';
+import { SELECTABLE_TYPES, TAB_LABELS } from '../config/materials';
+import TypeBadges from '../components/TypeBadges';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
 
@@ -18,7 +20,7 @@ interface Props {
   updateInvoiceItems: (invIndex: number, items: DetailRow[]) => void;
   ocrResults?: any; onBack: () => void; onNext: () => void;
   onSaveDraft: () => Promise<boolean>; onHome: () => void;
-  onAddInvoice: () => void; onRemoveInvoice: (invIndex: number) => void;
+  onAddInvoice: (type: ReimbursementType) => void; onRemoveInvoice: (invIndex: number) => void;
 }
 
 export default function FillForm({ formData, updateForm, updateInvoice, updateInvoiceItems, onBack, onNext, onSaveDraft, onHome, onAddInvoice, onRemoveInvoice }: Props) {
@@ -26,6 +28,7 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [addType, setAddType] = useState<ReimbursementType>(formData.types?.[0] || 'vat');
 
   const amountErrors = formData.invoices.map(inv => inv.reimbursement_amount > inv.invoice_total && inv.invoice_total > 0);
   const hasAmountError = amountErrors.some(Boolean);
@@ -94,6 +97,7 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
         <div className="card" key={invIdx}>
           <div className="card-head">
             <h2 className="card-title"><Icon name="receipt" size={18} /> 发票 {invIdx + 1}
+              <TypeBadges types={[invoice.reimb_type]} small />
               {invoice.buyer_name && <span className="card-sub" style={{ marginLeft: 12 }}>{invoice.buyer_name}
                 <span className={`badge ${invoice.buyer_name_valid ? 'badge-ok' : 'badge-warn'}`} style={{ marginLeft: 6 }}><Icon name={invoice.buyer_name_valid ? 'check' : 'alert-triangle'} size={12} /></span>
                 {invoice.invoice_total > 0 && ` | 总额 ¥${invoice.invoice_total.toFixed(2)}`}
@@ -126,7 +130,7 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
             <DetailTable items={invoice.items} onChange={(items) => updateInvoiceItems(invIdx, items)}
               invoiceTotal={invoice.invoice_total}
               actualTotal={invoice.items.reduce((sum, item) => sum + (item.unit_price || 0) * (item.quantity || 0), 0)}
-              allowNegativePrice={formData.type === 'travel'} />
+              allowNegativePrice={invoice.reimb_type === 'travel'} />
           </div>
 
           <div className="form-row">
@@ -145,9 +149,14 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
         </div>
       ))}
 
-      {/* 添加发票/票据 */}
+      {/* 添加发票/票据（选择所属类型） */}
       <div className="card card--center">
-        <button className="btn btn-secondary" onClick={onAddInvoice}><Icon name="plus" size={16} /> 添加发票/票据</button>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select className="form-input" style={{ width: 140 }} value={addType} onChange={e => setAddType(e.target.value as ReimbursementType)} title="选择发票所属类型">
+            {SELECTABLE_TYPES.map(t => <option key={t} value={t}>{TAB_LABELS[t]}</option>)}
+          </select>
+          <button className="btn btn-secondary" onClick={() => onAddInvoice(addType)}><Icon name="plus" size={16} /> 添加发票/票据</button>
+        </div>
       </div>
 
       {/* 整体合计 */}

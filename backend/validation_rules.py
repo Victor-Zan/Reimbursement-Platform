@@ -22,6 +22,7 @@ class InvoiceSectionData:
     reimbursement_amount: float = 0.0
     handler: str = ""
     items: list[dict] = field(default_factory=list)
+    reimb_type: str = "vat"
 
 
 @dataclass
@@ -29,6 +30,9 @@ class ReimbursementFormData:
     """报销表完整表单数据"""
     # 报销类型（vat/insurance/travel/bulk，旧数据兜底 vat）
     type: str = "vat"
+
+    # 多类型报销：类型数组（单类型时 len=1；旧数据回退 [type]）
+    types: list[str] = field(default_factory=lambda: ["vat"])
 
     # 表头（所有发票共享）
     activity_name: str = ""
@@ -50,11 +54,16 @@ class ReimbursementFormData:
 
 # ---- 校验函数 ----
 
+def _invoice_allow_negative(invoice: InvoiceSectionData, data: ReimbursementFormData) -> bool:
+    """出行类发票允许负数单价（如退票差价）；旧数据无发票类型时按表单类型兜底。"""
+    return invoice.reimb_type == "travel" or (not invoice.reimb_type and "travel" in data.types)
+
+
 def check_detail_rows_complete(data: ReimbursementFormData) -> tuple[bool, str]:
     """凡填写了物品名称的行，单价/数量/购买途径/是否可重复利用必须齐全。
     出行类报销允许负数单价（如退票差价），其他类型单价必须为正。"""
-    allow_negative = data.type == "travel"
     for inv_idx, invoice in enumerate(data.invoices):
+        allow_negative = _invoice_allow_negative(invoice, data)
         for i, item in enumerate(invoice.items):
             if item.get("name", "").strip():
                 missing = []
@@ -75,8 +84,8 @@ def check_detail_rows_complete(data: ReimbursementFormData) -> tuple[bool, str]:
 
 def check_at_least_one_item(data: ReimbursementFormData) -> tuple[bool, str]:
     """至少有一行完整有效的报销项（出行类允许负数单价）"""
-    allow_negative = data.type == "travel"
     for invoice in data.invoices:
+        allow_negative = _invoice_allow_negative(invoice, data)
         for item in invoice.items:
             name = item.get("name", "").strip()
             price = item.get("unit_price", 0)

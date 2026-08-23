@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MATERIALS, typeLabel, typeColor } from '../config/materials';
-import type { MaterialKey } from '../types';
+import { typesFrom, materialByKey, typeLabel } from '../config/materials';
 import { TIME_RANGES, inTimeRange } from '../utils/timeRange';
+import TypeBadges from '../components/TypeBadges';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
 
 interface Props {
-  onEnterVat: () => void;
-  onEnterOther: () => void;
+  onEnterWizard: () => void;
   onOpenDrafts: () => void;
   onOpenHistory: () => void;
   user?: any;
@@ -16,9 +15,9 @@ interface Props {
 }
 
 interface DraftSummary { id: string; activity_name: string; org_name: string; current_step: number; updated_at: string; }
-interface SubmissionFile { filename: string; size: number; modified: string; reimb_type?: string; status?: string; }
+interface SubmissionFile { filename: string; size: number; modified: string; reimb_type?: string; reimb_types?: string[]; status?: string; }
 
-export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpenHistory, user, onReEdit }: Props) {
+export default function HomePage({ onEnterWizard, onOpenDrafts, onOpenHistory, user, onReEdit }: Props) {
   const navigate = useNavigate();
   const { toast, confirm } = useFeedback();
   const [draftCount, setDraftCount] = useState(0);
@@ -126,13 +125,6 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
     return true;
   });
 
-  const typeBadge = (t?: string) => (
-    <span className="badge badge-neutral">
-      <span className="dot" style={{ background: typeColor(t) }} />
-      {typeLabel(t)}
-    </span>
-  );
-
   return (
     <div className="home-page">
       <div className="home-header">
@@ -144,12 +136,11 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
         </div>
       </div>
       <div className="home-grid">
-        <div className="home-card home-card-large" onClick={onEnterVat}>
+        <div className="home-card home-card-large" onClick={onEnterWizard}>
           <div className="home-card-icon"><Icon name="file-text" size={28} /></div>
-          <div className="home-card-content"><h2>增值税报销</h2><p>适用于增值税普通发票的学生活动经费报销，支持多发票上传、OCR自动识别、一键生成报销表</p><span className="home-card-badge">已开放</span></div>
+          <div className="home-card-content"><h2>报销申请</h2><p>一次提交可同时包含增值税、保险、出行多类报销，上传发票与其他材料后自动 OCR 识别并生成报销表</p><span className="home-card-badge">增值税 · 保险 · 出行</span></div>
         </div>
         <div className="home-card-stack">
-          <div className="home-card home-card-small" onClick={onEnterOther}><span className="home-card-icon"><Icon name="paperclip" size={20} /></span><span className="home-card-label">其他类报销</span><span className="home-card-badge">保险 · 路费 · 大量发票</span></div>
           <div className="home-card home-card-small" onClick={handleOpenDrafts}><span className="home-card-icon"><Icon name="edit" size={20} /></span><span className="home-card-label">我的草稿</span>{draftCount > 0 && <span className="home-card-count">{draftCount} 条</span>}</div>
           <div className="home-card home-card-small" onClick={handleOpenHistory}><span className="home-card-icon"><Icon name="folder" size={20} /></span><span className="home-card-label">查看历史提交</span></div>
           <div className="home-card home-card-small" onClick={handleOpenFeedback}><span className="home-card-icon"><Icon name="mail" size={20} /></span><span className="home-card-label">审核反馈</span>{feedbackBadge > 0 && <span className="home-card-count home-card-count--danger">{feedbackBadge}</span>}</div>
@@ -191,7 +182,7 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
              : <div className="submission-list">{filteredSubmissions.map((s, i) => (
               <div key={i} className="submission-item">
                 <div className="draft-info"><strong><Icon name="archive" size={16} /> {s.filename}</strong><span className="draft-meta">{formatSize(s.size)} · {formatTime(s.modified)}</span></div>
-                {typeBadge(s.reimb_type)}
+                <TypeBadges types={typesFrom(s)} />
                 <a href={`/api/v1/submissions/download/${encodeURIComponent(s.filename)}`} download className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}><Icon name="download" size={14} /> 下载</a>
               </div>
             ))}</div>}
@@ -213,11 +204,12 @@ export default function HomePage({ onEnterVat, onEnterOther, onOpenDrafts, onOpe
                 {f.status === 'rejected' && (<>
                   {f.is_admin && <span className="badge badge-purple" style={{ alignSelf: 'flex-start' }}><Icon name="shield" size={12} /> 管理员批注</span>}
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{f.invoice_comment && <p><Icon name="receipt" size={14} /> 发票：{f.invoice_comment}</p>}{f.evidence_comment && <p><Icon name="camera" size={14} /> 凭证：{f.evidence_comment}</p>}{Object.entries((f.material_comments || {}) as Record<string, string>).filter(([, c]) => c).map(([k, c]) => {
-                    const cfg = MATERIALS[k as MaterialKey];
-                    return <p key={k}>{cfg ? <><Icon name={cfg.icon} size={14} /> {cfg.label}</> : k}：{c}</p>;
+                    const m = materialByKey(k);
+                    const label = m.cfg ? (m.type ? `${typeLabel(m.type)}·${m.cfg.label}` : m.cfg.label) : k;
+                    return <p key={k}>{m.cfg ? <><Icon name={m.cfg.icon} size={14} /> {label}</> : k}：{c}</p>;
                   })}{f.form_comment && <p><Icon name="clipboard" size={14} /> 报销表：{f.form_comment}</p>}</div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    {onReEdit && (<button className="btn btn-primary btn-sm" onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { closeFeedback(); const hasMaterial = !!(f.invoice_comment || f.evidence_comment || Object.values(f.material_comments || {}).some(c => c)); const _materials: any = {}; for (const k of Object.keys(j.material_urls || {})) { _materials[k] = { urls: j.material_urls[k], paths: (j.material_paths || {})[k] || [] }; } onReEdit({ ...j.form_data, _reEditStep: hasMaterial ? 1 : 2, _previousZip: f.filename, _materials }); } else toast('未找到原始数据', 'error'); } catch { toast('加载失败', 'error'); } }}><Icon name="edit" size={14} /> 重新编辑</button>)}
+                    {onReEdit && (<button className="btn btn-primary btn-sm" onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { closeFeedback(); const hasMaterial = !!(f.invoice_comment || f.evidence_comment || Object.values(f.material_comments || {}).some(c => c)); const _materials: any = {}; if (j.type_material_urls) { for (const t of Object.keys(j.type_material_urls)) { for (const k of Object.keys(j.type_material_urls[t])) { _materials[`${t}:${k}`] = { urls: j.type_material_urls[t][k], paths: (j.type_material_paths || {})[t]?.[k] || [] }; } } } else { for (const k of Object.keys(j.material_urls || {})) { _materials[k] = { urls: j.material_urls[k], paths: (j.material_paths || {})[k] || [] }; } } onReEdit({ ...j.form_data, _reEditStep: hasMaterial ? 1 : 2, _previousZip: f.filename, _materials }); } else toast('未找到原始数据', 'error'); } catch { toast('加载失败', 'error'); } }}><Icon name="edit" size={14} /> 重新编辑</button>)}
                     <button className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); closeFeedback(); navigate('/member/appeals'); }}><Icon name="send" size={14} /> 意见反馈</button>
                   </div>
                 </>)}
