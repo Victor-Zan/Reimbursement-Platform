@@ -84,7 +84,7 @@ export default function HomePage({ onEnterWizard, onOpenDrafts, onOpenHistory, u
   return (
     <div className="home-page">
       <div className="home-header">
-        <h1>社团成员工作台</h1>
+        <h1>报销人工作台</h1>
         <div className="home-status-row">
           <div className="home-status-item"><span className="home-status-num stat-num--gold">{memberStats.monthly}</span><span>本月提交</span></div>
           <div className="home-status-item"><span className="home-status-num stat-num--warn">{memberStats.pending}</span><span>待审核</span></div>

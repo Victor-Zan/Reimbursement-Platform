@@ -9,7 +9,7 @@ interface Props { user: any; }
 interface AppealItem { id: number; submission_zip: string; reimb_type?: string; reimb_types?: string[]; reason: string; status: string; created_at: string; }
 interface SubmissionFile { filename: string; size: number; modified: string; org_name?: string; activity_name?: string; reimb_type?: string; reimb_types?: string[]; status?: string; }
 
-/** 社团成员端：意见反馈（申诉被打回的报销申请，可多选 + 共同理由）。 */
+/** 报销人端：意见反馈（申诉被打回的报销申请，可多选 + 共同理由）。 */
 export default function MemberAppeals({ user }: Props) {
   const navigate = useNavigate();
   const { toast } = useFeedback();

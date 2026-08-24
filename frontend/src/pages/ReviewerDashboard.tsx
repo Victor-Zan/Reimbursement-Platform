@@ -21,7 +21,7 @@ export default function ReviewerDashboard({ user }: Props) {
     }).catch(() => {});
   }, []);
 
-  // 审核员申请成为管理员（申请逻辑与成员端一致，发往管理员端审批）
+  // 审核员申请成为管理员（申请逻辑与报销人端一致，发往管理员端审批）
   const handleApply = async () => {
     if (!applyEmail || !applyReason) { toast('请填写邮箱和申请原因', 'warn'); return; }
     await fetch('/api/v1/reviewer/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: applyEmail, reason: applyReason, role: 'admin' }) });

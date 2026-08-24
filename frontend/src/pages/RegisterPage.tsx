@@ -45,7 +45,7 @@ export default function RegisterPage() {
         <img src="/logo-large.png" alt="CUHK-SZ" className="auth-logo" />
         <h1>注册账号</h1>
         <p className="auth-subtitle">
-          @cuhk.edu.cn → 审核员 &nbsp;|&nbsp; @link.cuhk.edu.cn → 社团成员
+          @cuhk.edu.cn → 审核员 &nbsp;|&nbsp; @link.cuhk.edu.cn → 报销人
         </p>
 
         <form onSubmit={handleRegister}>
