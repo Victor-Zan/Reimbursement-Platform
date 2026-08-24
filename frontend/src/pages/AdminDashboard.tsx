@@ -72,7 +72,7 @@ export default function AdminDashboard({ user }: Props) {
       <div className="home-grid">
         <div className="home-card home-card-large" onClick={() => navigate('/admin/appeals')}>
           <div className="home-card-icon"><Icon name="send" size={28} /></div>
-          <div className="home-card-content"><h2>处理意见</h2><p>查看成员对打回结果的意见反馈与审核员批注，裁定报销最终结果</p>{unreadAppeals > 0 && <span className="home-card-count home-card-count--danger">{unreadAppeals} 条新反馈</span>}</div>
+          <div className="home-card-content"><h2>处理意见</h2><p>查看报销人对打回结果的意见反馈与审核员批注，裁定报销最终结果</p>{unreadAppeals > 0 && <span className="home-card-count home-card-count--danger">{unreadAppeals} 条新反馈</span>}</div>
         </div>
         <div className="home-card-stack">
           <div className="home-card home-card-small" onClick={() => navigate('/admin/permissions')}><span className="home-card-icon"><Icon name="key" size={20} /></span><span className="home-card-label">给予权限</span>{pendingApplications > 0 && <span className="home-card-count">{pendingApplications} 条申请</span>}</div>

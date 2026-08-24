@@ -21,7 +21,7 @@ export default function RoleSelectPage({ user, onLogout }: Props) {
             onClick={() => navigate('/member')}
           >
             <div className="role-card-icon"><Icon name="user" size={22} /></div>
-            <h3>社员登录</h3>
+            <h3>报销人登录</h3>
             <p>进入报销提交与查看</p>
           </div>
 

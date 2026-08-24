@@ -58,7 +58,7 @@ function CommentBox({ label, comment, setComment, quickComments }: { label: stri
   );
 }
 
-/** 管理员端：处理意见（查看成员申诉 + 报销内容 + 审核员批注，裁定最终结果）。 */
+/** 管理员端：处理意见（查看报销人申诉 + 报销内容 + 审核员批注，裁定最终结果）。 */
 export default function AdminAppeals({ user }: Props) {
   const navigate = useNavigate();
   const { toast, confirm } = useFeedback();
@@ -87,7 +87,7 @@ export default function AdminAppeals({ user }: Props) {
 
   useEffect(() => {
     loadAppeals();
-    // 打开处理意见页面即视为已读（与成员审核反馈的红点语义一致）
+    // 打开处理意见页面即视为已读（与报销人审核反馈的红点语义一致）
     localStorage.setItem('appeal_last_read', new Date().toISOString());
   }, []);
 
@@ -289,7 +289,7 @@ export default function AdminAppeals({ user }: Props) {
     <div>
       <div className="page-head">
         <h1><Icon name="send" size={22} /> 处理意见</h1>
-        <p className="page-head-sub">查看成员申诉、报销内容与审核员批注，直接裁定报销最终结果</p>
+        <p className="page-head-sub">查看报销人申诉、报销内容与审核员批注，直接裁定报销最终结果</p>
       </div>
       <button className="btn btn-ghost btn-sm" onClick={() => navigate('/admin')} style={{ marginBottom: 16 }}><Icon name="arrow-left" size={14} /> 返回</button>
       <div className="filter-bar">
@@ -353,7 +353,7 @@ export default function AdminAppeals({ user }: Props) {
                 <>
                   {/* 申诉信息 */}
                   <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-                    <h4 className="section-title"><Icon name="send" size={16} /> 成员申诉</h4>
+                    <h4 className="section-title"><Icon name="send" size={16} /> 报销人申诉</h4>
                     <div className="draft-info" style={{ fontSize: 14 }}>
                       <strong>{selected.user_email}</strong>
                       <span className="draft-meta">提交时间：{selected.created_at.slice(0, 19).replace('T', ' ')}</span>

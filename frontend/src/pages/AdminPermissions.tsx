@@ -11,7 +11,7 @@ interface Application {
   role: string;
 }
 
-/** 管理员端：给予权限（审批成员提交的审核员/管理员权限申请）。 */
+/** 管理员端：给予权限（审批报销人提交的审核员/管理员权限申请）。 */
 export default function AdminPermissions() {
   const navigate = useNavigate();
   const [applications, setApplications] = useState<Application[]>([]);
@@ -39,7 +39,7 @@ export default function AdminPermissions() {
       <button className="btn btn-ghost btn-sm" onClick={() => navigate('/admin')} style={{ marginBottom: 16 }}><Icon name="arrow-left" size={14} /> 返回</button>
       <div className="page-head">
         <h1><Icon name="key" size={22} /> 给予权限</h1>
-        <p className="page-head-sub">审批成员提交的权限申请，通过后按申请的角色授予审核员或管理员权限</p>
+        <p className="page-head-sub">审批报销人提交的权限申请，通过后按申请的角色授予审核员或管理员权限</p>
       </div>
 
       {loading ? <div className="loading"><span className="spinner" /> 加载中...</div>

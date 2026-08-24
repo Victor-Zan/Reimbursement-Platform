@@ -15,7 +15,7 @@ export default function LandingPage() {
         <div className="landing-cards">
           <div className="landing-card">
             <div className="landing-card-icon"><Icon name="user" size={20} /></div>
-            <h3>社团成员</h3>
+            <h3>报销人</h3>
             <p>提交报销申请、查看审核进度、管理草稿</p>
           </div>
           <div className="landing-card">
