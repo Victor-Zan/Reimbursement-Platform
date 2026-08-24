@@ -1,8 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { typesFrom, materialByKey, typeLabel } from '../config/materials';
-import { TIME_RANGES, inTimeRange } from '../utils/timeRange';
-import TypeBadges from '../components/TypeBadges';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
 
@@ -15,7 +12,6 @@ interface Props {
 }
 
 interface DraftSummary { id: string; activity_name: string; org_name: string; current_step: number; updated_at: string; }
-interface SubmissionFile { filename: string; size: number; modified: string; reimb_type?: string; reimb_types?: string[]; status?: string; }
 
 export default function HomePage({ onEnterWizard, onOpenDrafts, onOpenHistory, user, onReEdit }: Props) {
   const navigate = useNavigate();
@@ -23,14 +19,8 @@ export default function HomePage({ onEnterWizard, onOpenDrafts, onOpenHistory, u
   const [draftCount, setDraftCount] = useState(0);
   const [showDrafts, setShowDrafts] = useState(false);
   const [drafts, setDrafts] = useState<DraftSummary[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [submissions, setSubmissions] = useState<SubmissionFile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [historySearch, setHistorySearch] = useState('');
-  const [historyTimeRange, setHistoryTimeRange] = useState('all');
   const [feedbackBadge, setFeedbackBadge] = useState(0);
-  const [showFeedback, setShowFeedback] = useState(false);
-  const [feedbacks, setFeedbacks] = useState<any[]>([]);
   const [showApply, setShowApply] = useState(false);
   const [applyEmail, setApplyEmail] = useState(user?.email || '');
   const [applyReason, setApplyReason] = useState('');
@@ -53,50 +43,23 @@ export default function HomePage({ onEnterWizard, onOpenDrafts, onOpenHistory, u
     setLoading(false); setShowDrafts(true);
   };
 
-  const handleOpenHistory = async () => {
-    setLoading(true);
-    try { const r = await fetch(`/api/v1/submissions?user_email=${encodeURIComponent(user?.email || '')}`); const j = await r.json(); if (j.success) setSubmissions(j.submissions); } catch {}
-    setLoading(false); setShowHistory(true);
-  };
-
-  const handleOpenFeedback = async () => {
-    setLoading(true);
-    try {
-      const lastRead = localStorage.getItem('feedback_last_read') || '';
-      const r = await fetch(`/api/v1/submissions?user_email=${encodeURIComponent(user?.email || '')}`);
-      const j = await r.json();
-      const items: any[] = []; let unread = 0;
-      if (j.success) for (const s of j.submissions) {
-        try {
-          const rr = await fetch(`/api/v1/review/annotations/${encodeURIComponent(s.filename)}`);
-          const rj = await rr.json();
-          if (rj.success && rj.review.status !== 'pending') {
-            items.push({ ...s, ...rj.review });
-            if (rj.review.created_at && rj.review.created_at > lastRead) unread++;
-          }
-        } catch {}
-      }
-      setFeedbacks(items); setFeedbackBadge(unread);
-    } catch {}
-    setLoading(false); setShowFeedback(true);
-    localStorage.setItem('feedback_last_read', new Date().toISOString());
-  };
-
-  const closeFeedback = () => { setShowFeedback(false); setFeedbackBadge(0); };
-
-  // 未读红点计算：任何状态改变（通过/打回）都会产生新批注，计入未读
+  // 未读红点计算：任何状态改变（通过/打回）都会产生新批注，计入未读；
+  // 批注请求并行发出（Promise.all），避免多条提交串行等待拖慢红点刷新
   const refreshUnread = useCallback(async () => {
     if (!user?.email) return;
     try {
       const lastRead = localStorage.getItem('feedback_last_read') || '';
       const r = await fetch(`/api/v1/submissions?user_email=${encodeURIComponent(user.email)}`);
       const j = await r.json(); let unread = 0;
-      if (j.success) for (const s of j.submissions) {
-        try {
-          const rr = await fetch(`/api/v1/review/annotations/${encodeURIComponent(s.filename)}`);
-          const rj = await rr.json();
-          if (rj.success && rj.review.status !== 'pending' && rj.review.created_at && rj.review.created_at > lastRead) unread++;
-        } catch {}
+      if (j.success) {
+        const results = await Promise.all(j.submissions.map(async (s: any) => {
+          try {
+            const rr = await fetch(`/api/v1/review/annotations/${encodeURIComponent(s.filename)}`);
+            const rj = await rr.json();
+            return rj.success && rj.review.status !== 'pending' && rj.review.created_at && rj.review.created_at > lastRead ? 1 : 0;
+          } catch { return 0; }
+        }));
+        unread = results.reduce((a: number, b: number) => a + b, 0);
       }
       setFeedbackBadge(unread);
     } catch {}
@@ -104,9 +67,9 @@ export default function HomePage({ onEnterWizard, onOpenDrafts, onOpenHistory, u
 
   useEffect(() => { refreshUnread(); }, [refreshUnread]);
 
-  // 轮询：审核员操作后 30 秒内红点自动出现，无需刷新页面
+  // 轮询：审核员操作后 10 秒内红点自动出现/消失，无需刷新页面
   useEffect(() => {
-    const timer = setInterval(refreshUnread, 30000);
+    const timer = setInterval(refreshUnread, 10000);
     return () => clearInterval(timer);
   }, [refreshUnread]);
 
@@ -116,14 +79,7 @@ export default function HomePage({ onEnterWizard, onOpenDrafts, onOpenHistory, u
     toast('申请已提交', 'success'); setShowApply(false); setApplyReason(''); setApplyRole('reviewer');
   };
 
-  const formatSize = (b: number) => b < 1024*1024 ? `${(b/1024).toFixed(1)} KB` : `${(b/(1024*1024)).toFixed(1)} MB`;
   const formatTime = (iso: string) => iso ? iso.replace('T', ' ').slice(0, 19) : '';
-
-  const filteredSubmissions = submissions.filter(s => {
-    if (historySearch && !s.filename.includes(historySearch)) return false;
-    if (!inTimeRange(historyTimeRange, s.modified)) return false;
-    return true;
-  });
 
   return (
     <div className="home-page">
@@ -142,8 +98,8 @@ export default function HomePage({ onEnterWizard, onOpenDrafts, onOpenHistory, u
         </div>
         <div className="home-card-stack">
           <div className="home-card home-card-small" onClick={handleOpenDrafts}><span className="home-card-icon"><Icon name="edit" size={20} /></span><span className="home-card-label">我的草稿</span>{draftCount > 0 && <span className="home-card-count">{draftCount} 条</span>}</div>
-          <div className="home-card home-card-small" onClick={handleOpenHistory}><span className="home-card-icon"><Icon name="folder" size={20} /></span><span className="home-card-label">查看历史提交</span></div>
-          <div className="home-card home-card-small" onClick={handleOpenFeedback}><span className="home-card-icon"><Icon name="mail" size={20} /></span><span className="home-card-label">审核反馈</span>{feedbackBadge > 0 && <span className="home-card-count home-card-count--danger">{feedbackBadge}</span>}</div>
+          <div className="home-card home-card-small" onClick={() => navigate('/member/history')}><span className="home-card-icon"><Icon name="folder" size={20} /></span><span className="home-card-label">查看历史提交</span></div>
+          <div className="home-card home-card-small" onClick={() => navigate('/member/feedback')}><span className="home-card-icon"><Icon name="mail" size={20} /></span><span className="home-card-label">审核反馈</span>{feedbackBadge > 0 && <span className="home-card-count home-card-count--danger">{feedbackBadge}</span>}</div>
           <div className="home-card home-card-small" onClick={() => setShowApply(true)}><span className="home-card-icon"><Icon name="key" size={20} /></span><span className="home-card-label">申请权限</span></div>
         </div>
       </div>
@@ -164,58 +120,6 @@ export default function HomePage({ onEnterWizard, onOpenDrafts, onOpenHistory, u
               </div>
             ))}</div>}
             <button className="btn btn-secondary btn-block" onClick={() => setShowDrafts(false)} style={{ marginTop: 16 }}>关闭</button>
-          </div>
-        </div>
-      )}
-
-      {/* 历史提交弹窗 */}
-      {showHistory && (
-        <div className="modal-overlay" onClick={() => setShowHistory(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-head"><h2 className="modal-title"><Icon name="folder" size={18} /> 查看历史提交</h2></div>
-            <input className="form-input" placeholder="搜索文件名..." value={historySearch} onChange={e => setHistorySearch(e.target.value)} style={{ marginBottom: 12 }} />
-            <select className="form-input" value={historyTimeRange} onChange={e => setHistoryTimeRange(e.target.value)} style={{ marginBottom: 12 }} title="按时间范围筛选">
-              {TIME_RANGES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            {loading ? <div className="loading"><span className="spinner" /> 加载中...</div>
-             : filteredSubmissions.length === 0 ? <div className="empty"><div className="empty-icon"><Icon name="folder" size={20} /></div>暂无提交记录</div>
-             : <div className="submission-list">{filteredSubmissions.map((s, i) => (
-              <div key={i} className="submission-item">
-                <div className="draft-info"><strong><Icon name="archive" size={16} /> {s.filename}</strong><span className="draft-meta">{formatSize(s.size)} · {formatTime(s.modified)}</span></div>
-                <TypeBadges types={typesFrom(s)} />
-                <a href={`/api/v1/submissions/download/${encodeURIComponent(s.filename)}`} download className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}><Icon name="download" size={14} /> 下载</a>
-              </div>
-            ))}</div>}
-            <button className="btn btn-secondary btn-block" onClick={() => setShowHistory(false)} style={{ marginTop: 16 }}>关闭</button>
-          </div>
-        </div>
-      )}
-
-      {/* 审核反馈弹窗 */}
-      {showFeedback && (
-        <div className="modal-overlay" onClick={closeFeedback}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-head"><h2 className="modal-title"><Icon name="mail" size={18} /> 审核反馈</h2></div>
-            {loading ? <div className="loading"><span className="spinner" /> 加载中...</div>
-             : feedbacks.length === 0 ? <div className="empty"><div className="empty-icon"><Icon name="mail" size={20} /></div>暂无审核反馈</div>
-             : feedbacks.map((f, i) => (
-              <div key={i} className="feedback-item">
-                <div className="feedback-item-head"><strong><Icon name="archive" size={16} /> {f.filename}</strong><span className={`badge ${f.status === 'approved' ? 'badge-ok' : 'badge-error'}`}>{f.status === 'approved' ? '已通过' : '已打回'}</span></div>
-                {f.status === 'rejected' && (<>
-                  {f.is_admin && <span className="badge badge-purple" style={{ alignSelf: 'flex-start' }}><Icon name="shield" size={12} /> 管理员批注</span>}
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{f.invoice_comment && <p><Icon name="receipt" size={14} /> 发票：{f.invoice_comment}</p>}{f.evidence_comment && <p><Icon name="camera" size={14} /> 凭证：{f.evidence_comment}</p>}{Object.entries((f.material_comments || {}) as Record<string, string>).filter(([, c]) => c).map(([k, c]) => {
-                    const m = materialByKey(k);
-                    const label = m.cfg ? (m.type ? `${typeLabel(m.type)}·${m.cfg.label}` : m.cfg.label) : k;
-                    return <p key={k}>{m.cfg ? <><Icon name={m.cfg.icon} size={14} /> {label}</> : k}：{c}</p>;
-                  })}{f.form_comment && <p><Icon name="clipboard" size={14} /> 报销表：{f.form_comment}</p>}</div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    {onReEdit && (<button className="btn btn-primary btn-sm" onClick={async (e) => { e.stopPropagation(); try { const r = await fetch(`/api/v1/submission-data/${encodeURIComponent(f.filename)}`); const j = await r.json(); if (j.success && j.form_data) { closeFeedback(); const hasMaterial = !!(f.invoice_comment || f.evidence_comment || Object.values(f.material_comments || {}).some(c => c)); const _materials: any = {}; if (j.type_material_urls) { for (const t of Object.keys(j.type_material_urls)) { for (const k of Object.keys(j.type_material_urls[t])) { _materials[`${t}:${k}`] = { urls: j.type_material_urls[t][k], paths: (j.type_material_paths || {})[t]?.[k] || [] }; } } } else { for (const k of Object.keys(j.material_urls || {})) { _materials[k] = { urls: j.material_urls[k], paths: (j.material_paths || {})[k] || [] }; } } onReEdit({ ...j.form_data, _reEditStep: hasMaterial ? 1 : 2, _previousZip: f.filename, _materials }); } else toast('未找到原始数据', 'error'); } catch { toast('加载失败', 'error'); } }}><Icon name="edit" size={14} /> 重新编辑</button>)}
-                    <button className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); closeFeedback(); navigate('/member/appeals'); }}><Icon name="send" size={14} /> 意见反馈</button>
-                  </div>
-                </>)}
-              </div>
-            ))}
-            <button className="btn btn-secondary btn-block" onClick={closeFeedback} style={{ marginTop: 16 }}>关闭</button>
           </div>
         </div>
       )}

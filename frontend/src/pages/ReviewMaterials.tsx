@@ -5,13 +5,15 @@ import { TYPE_MATERIALS, materialFor, typesFrom, typeColor, TYPE_CONFIGS } from 
 import type { ReimbursementType, MaterialKey } from '../types';
 import { TIME_RANGES, inTimeRange } from '../utils/timeRange';
 import TypeBadges from '../components/TypeBadges';
+import OrgAutocomplete from '../components/OrgAutocomplete';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
+import { ORGANIZATIONS } from '../config/organizations';
 
 interface Props { user: any; }
-interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; reimb_type?: string; reimb_types?: string[]; }
+interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; reimb_type?: string; reimb_types?: string[]; org_name?: string; total_amount?: string; }
 interface PreviewFile { name: string; data_url: string; }
-interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string } | null; }
+interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string; html?: string } | null; }
 
 /** 报销表批注快捷模板 */
 const FORM_QUICK = ['拼接信息中组织名称有误', '拼接信息中活动名称有误', '拼接信息中物品名称有误', '拼接信息中金额有误'];
@@ -76,11 +78,13 @@ export default function ReviewMaterials({ user }: Props) {
   const [actionLoading, setActionLoading] = useState(false);
   const [typeFilter, setTypeFilter] = useState('全部');
   const [timeRange, setTimeRange] = useState('all');
+  const [orgFilter, setOrgFilter] = useState('');
 
   // ---- 审核窗口状态 ----
   const [fullscreen, setFullscreen] = useState(false);
   const [view, setView] = useState<ReviewView>('list');
   const [lightbox, setLightbox] = useState<{ files: PreviewFile[]; index: number; label: string } | null>(null);
+  const [formFullscreen, setFormFullscreen] = useState(false);
 
   const loadSubmissions = async () => {
     setLoading(true);
@@ -186,10 +190,21 @@ export default function ReviewMaterials({ user }: Props) {
     if (s.status !== 'pending' && s.status !== 'resubmitted') return false;
     if (typeFilter !== '全部' && !typesFrom(s).includes(typeFilter as ReimbursementType)) return false;
     if (!inTimeRange(timeRange, s.modified)) return false;
+    const q = orgFilter.trim().toLowerCase();
+    if (q && !(s.org_name || '').toLowerCase().includes(q)) return false;
     return true;
   });
+  /** 一键恢复默认筛选：类型=全部、时间=全部、社团=空 */
+  const resetFilters = () => { setTypeFilter('全部'); setTimeRange('all'); setOrgFilter(''); };
   const formatSize = (b: number) => b < 1024*1024 ? `${(b/1024).toFixed(1)} KB` : `${(b/(1024*1024)).toFixed(1)} MB`;
   const statusBadge = (s: string) => s === 'approved' ? <span className="badge badge-ok">已通过</span> : s === 'rejected' ? <span className="badge badge-error">已打回</span> : s === 'resubmitted' ? <span className="badge badge-purple">重审</span> : <span className="badge badge-warn">待审核</span>;
+  /** 列表右侧报销总金额：缺失/无效时显示占位符 — */
+  const amountBadge = (s: Submission) => {
+    const n = parseFloat(s.total_amount || '');
+    return Number.isFinite(n) && n > 0
+      ? <span className="list-amount">¥{n.toFixed(2)}</span>
+      : <span className="list-amount is-empty">—</span>;
+  };
 
   // ---- 审核窗口：清单视图（多类型按类型分列，列内为该类型的材料行） ----
   const renderList = () => (
@@ -220,7 +235,7 @@ export default function ReviewMaterials({ user }: Props) {
         ))}
       </div>
       {preview?.form && (
-        <div className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer' } as CSSProperties} onClick={() => setView('form')}>
+        <div className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer' } as CSSProperties} onClick={() => { setView('form'); setFormFullscreen(true); }}>
           <div className="draft-info"><strong><Icon name="clipboard" size={16} /> 报销表</strong><span className="draft-meta">{preview.form.name}</span></div>
           {formComment && formComment.trim() && <span className="badge badge-gold" title="已填批注">已批注</span>}
           <Icon name="arrow-right" size={16} />
@@ -236,7 +251,14 @@ export default function ReviewMaterials({ user }: Props) {
         <div>
           <button className="btn btn-ghost btn-sm" onClick={() => setView('list')} style={{ marginBottom: 12 }}><Icon name="arrow-left" size={14} /> 返回材料清单</button>
           <h4 className="section-title accent-left" style={{ '--accent': accent, paddingLeft: 8, borderLeftWidth: 3 } as CSSProperties}><Icon name="clipboard" size={16} /> 报销表</h4>
-          {preview?.form && <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ marginBottom: 4, textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>}
+          {preview?.form && (preview.form.html ? (
+            <>
+              <div className="excel-preview-scroll" dangerouslySetInnerHTML={{ __html: preview.form.html }} />
+              <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ marginTop: 8, textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>
+            </>
+          ) : (
+            <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ marginBottom: 4, textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>
+          ))}
           <CommentBox label="报销表/拼接信息批注" comment={formComment} setComment={setFormComment} quickComments={FORM_QUICK} />
         </div>
       );
@@ -285,6 +307,8 @@ export default function ReviewMaterials({ user }: Props) {
         <select className="form-input filter-status" value={timeRange} onChange={e => setTimeRange(e.target.value)} title="按时间范围筛选">
           {TIME_RANGES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+        <OrgAutocomplete value={orgFilter} onChange={setOrgFilter} orgs={ORGANIZATIONS} placeholder="按社团筛选..." />
+        <button className="btn btn-ghost btn-sm" onClick={resetFilters} title="一键恢复默认筛选"><Icon name="rotate-ccw" size={14} /> 恢复默认</button>
       </div>
 
       {loading ? <div className="loading"><span className="spinner" /> 加载中...</div>
@@ -297,11 +321,14 @@ export default function ReviewMaterials({ user }: Props) {
                  style={{ '--accent': typeColor(typesFrom(s)[0]) } as CSSProperties}
                  onClick={() => openReview(s.filename)}>
               <div className="draft-info">
-                <strong><Icon name="archive" size={16} /> {s.filename}</strong>
-                <span className="draft-meta">{formatSize(s.size)} · {s.modified.slice(0,19).replace('T',' ')}{s.reviewer_email ? ` · 审核人：${s.reviewer_email}` : ''}</span>
+                <strong><Icon name="archive" size={16} /> {s.org_name ? `${s.org_name}-${s.modified.slice(0,10)}-报销申请` : s.filename}</strong>
+                <span className="draft-meta">{s.modified.slice(0,19).replace('T',' ')} · {formatSize(s.size)}{s.reviewer_email ? ` · 审核人：${s.reviewer_email}` : ''}</span>
               </div>
-              <TypeBadges types={typesFrom(s)} />
-              {statusBadge(s.status)}
+              <div className="submission-type-col"><TypeBadges types={typesFrom(s)} /></div>
+              <div className="submission-right">
+                {statusBadge(s.status)}
+                {amountBadge(s)}
+              </div>
             </div>
           ))}
         </div>
@@ -371,6 +398,25 @@ export default function ReviewMaterials({ user }: Props) {
             ) : (
               <img src={lightboxFile.data_url} alt={lightboxFile.name} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 6 }} />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 报销表全屏预览：点材料清单「报销表」自动进入，关闭回材料清单 */}
+      {formFullscreen && preview?.form?.html && (
+        <div className="modal-overlay" onClick={() => { setFormFullscreen(false); setView('list'); }}>
+          <div className="modal modal-preview-full" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3 className="modal-title"><Icon name="clipboard" size={16} /> 报销表预览</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setFormFullscreen(false); setView('list'); }}><Icon name="x" size={14} /> 关闭</button>
+            </div>
+            <div className="excel-preview-scroll" dangerouslySetInnerHTML={{ __html: preview.form.html }} />
+            <div style={{ padding: '0 20px' }}>
+              <CommentBox label="报销表/拼接信息批注" comment={formComment} setComment={setFormComment} quickComments={FORM_QUICK} />
+            </div>
+            <div className="modal-foot">
+              <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>
+            </div>
           </div>
         </div>
       )}

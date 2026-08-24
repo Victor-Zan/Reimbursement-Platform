@@ -99,6 +99,7 @@ def init_db():
                     reimb_type    VARCHAR(20) DEFAULT 'vat',
                     status        VARCHAR(20) DEFAULT 'pending',
                     activity_name TEXT DEFAULT '',
+                    org_name      TEXT DEFAULT '',
                     parent_id     INTEGER REFERENCES submissions(id) ON DELETE SET NULL,
                     form_data     JSONB DEFAULT '{}',
                     created_at    TIMESTAMP DEFAULT NOW(),
@@ -127,6 +128,12 @@ def init_db():
             cur.execute("""
                 DO $$ BEGIN
                     ALTER TABLE submissions ADD COLUMN activity_name TEXT DEFAULT '';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE submissions ADD COLUMN org_name TEXT DEFAULT '';
                 EXCEPTION WHEN duplicate_column THEN NULL;
                 END $$;
             """)
@@ -287,6 +294,12 @@ def init_db():
                 UPDATE submissions
                 SET activity_name = COALESCE(form_data->'form'->>'activity_name', '')
                 WHERE COALESCE(form_data->'form'->>'activity_name', '') IS DISTINCT FROM activity_name;
+            """)
+            # 7b2. 社团名称（org_name 冗余列，供审核列表按社团筛选）
+            cur.execute("""
+                UPDATE submissions
+                SET org_name = COALESCE(form_data->'form'->>'org_name', '')
+                WHERE COALESCE(form_data->'form'->>'org_name', '') IS DISTINCT FROM org_name;
             """)
             # 7c. 批注挂接 submission_id（只补 NULL 行）
             cur.execute("""

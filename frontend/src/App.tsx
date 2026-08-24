@@ -12,6 +12,8 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminPermissions from './pages/AdminPermissions';
 import AdminAppeals from './pages/AdminAppeals';
 import MemberAppeals from './pages/MemberAppeals';
+import MemberHistory from './pages/MemberHistory';
+import MemberFeedback from './pages/MemberFeedback';
 import UploadMaterials from './pages/UploadMaterials';
 import FillForm from './pages/FillForm';
 import ReviewSubmit from './pages/ReviewSubmit';
@@ -263,6 +265,8 @@ export default function App() {
 
       <Route path="/member" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><HomePage onEnterWizard={enterWizard} onOpenDrafts={() => {}} onOpenHistory={() => {}} user={auth.user} onReEdit={handleReEdit} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/appeals" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><MemberAppeals user={auth.user} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member/history" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><MemberHistory user={auth.user} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member/feedback" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><MemberFeedback user={auth.user} onReEdit={handleReEdit} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/upload" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><UploadMaterials {...wizardProps} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/fill" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onAddInvoice={addInvoice} onRemoveInvoice={removeInvoice} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/review" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewSubmit formData={formData} materials={materials} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></div></> : <Navigate to="/login" />} />

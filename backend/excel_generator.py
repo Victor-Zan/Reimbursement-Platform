@@ -181,3 +181,62 @@ def generate_reimbursement_excel(
     wb.save(filepath)
 
     return filepath
+
+
+def workbook_to_html(wb) -> str:
+    """把报销表 xlsx 读回渲染为 HTML 表格（浏览器内预览用，替代下载后打开）。
+    单元格值全部转义（来自用户输入，防 XSS）；合并单元格仅锚点输出并带 rowspan/colspan；
+    还原加粗与水平对齐；金额格式（number_format 含 0.00）格式化为两位小数。"""
+    import html as _html
+
+    tables = []
+    for ws in wb.worksheets:
+        if ws.max_row <= 1 and ws.max_column <= 1:
+            continue
+        # 合并区域映射：每个单元格 -> 锚点坐标（左上角）
+        anchors: dict[tuple[int, int], tuple[int, int]] = {}
+        for rng in ws.merged_cells.ranges:
+            for r in range(rng.min_row, rng.max_row + 1):
+                for c in range(rng.min_col, rng.max_col + 1):
+                    anchors[(r, c)] = (rng.min_row, rng.min_col)
+        # 实际内容边界（只看有值单元格；合并区域延伸由 rowspan/colspan 覆盖，不撑大边界），
+        # 从而裁剪掉边缘完全空白的行列（如模板底部备注合并延伸出的空白行）
+        max_data_row, max_data_col = 1, 1
+        for r in range(1, ws.max_row + 1):
+            for c in range(1, ws.max_column + 1):
+                if ws.cell(row=r, column=c).value is not None:
+                    max_data_row = max(max_data_row, r)
+                    max_data_col = max(max_data_col, c)
+        rows_html = []
+        for row in range(1, max_data_row + 1):
+            tds = []
+            for col in range(1, max_data_col + 1):
+                if (row, col) in anchors:
+                    min_r, min_c = anchors[(row, col)]
+                    if (min_r, min_c) != (row, col):
+                        continue  # 合并区域的非锚点单元格
+                    rng = next(r for r in ws.merged_cells.ranges
+                               if r.min_row == min_r and r.min_col == min_c)
+                    # 锚点 span 截断到内容边界内，避免把表格撑到空白区
+                    span = (
+                        f' rowspan="{min(rng.max_row - rng.min_row + 1, max_data_row - row + 1)}"'
+                        f' colspan="{min(rng.max_col - rng.min_col + 1, max_data_col - col + 1)}"'
+                    )
+                else:
+                    span = ""
+                cell = ws.cell(row=row, column=col)
+                value = cell.value
+                if value is None:
+                    value = ""
+                elif isinstance(value, float) and "0.00" in (cell.number_format or ""):
+                    value = f"{value:.2f}"
+                text = _html.escape(str(value))
+                style = ""
+                if cell.font and cell.font.bold:
+                    style += "font-weight:bold;"
+                align = (cell.alignment.horizontal if cell.alignment else None) or "center"
+                style += f"text-align:{align};"
+                tds.append(f'<td{span} style="{style}">{text}</td>')
+            rows_html.append("<tr>" + "".join(tds) + "</tr>")
+        tables.append("<table>" + "".join(rows_html) + "</table>")
+    return '<div class="excel-preview">' + "".join(tables) + "</div>"

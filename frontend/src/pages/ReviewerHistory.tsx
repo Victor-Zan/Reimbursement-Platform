@@ -5,11 +5,13 @@ import { TYPE_MATERIALS, materialFor, typesFrom, materialByKey, typeLabel, typeC
 import type { ReimbursementType, MaterialKey } from '../types';
 import { TIME_RANGES, inTimeRange } from '../utils/timeRange';
 import TypeBadges from '../components/TypeBadges';
+import OrgAutocomplete from '../components/OrgAutocomplete';
 import Icon from '../components/Icon';
+import { ORGANIZATIONS } from '../config/organizations';
 
-interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; reimb_type?: string; reimb_types?: string[]; }
+interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; org_name?: string; reimb_type?: string; reimb_types?: string[]; }
 interface PreviewFile { name: string; data_url: string; }
-interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string } | null; }
+interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string; html?: string } | null; }
 
 /** 审核窗口内的视图：清单 / 报销表 / 某类型某材料（"type:key"） */
 type ReviewView = 'list' | 'form' | string;
@@ -53,11 +55,13 @@ export default function ReviewerHistory() {
   const [statusFilter, setStatusFilter] = useState('全部');
   const [typeFilter, setTypeFilter] = useState('全部');
   const [timeRange, setTimeRange] = useState('all');
+  const [orgFilter, setOrgFilter] = useState('');
 
   // ---- 查看窗口状态 ----
   const [fullscreen, setFullscreen] = useState(false);
   const [view, setView] = useState<ReviewView>('list');
   const [lightbox, setLightbox] = useState<{ files: PreviewFile[]; index: number; label: string } | null>(null);
+  const [formFullscreen, setFormFullscreen] = useState(false);
 
   const loadSubmissions = async () => {
     setLoading(true);
@@ -125,8 +129,12 @@ export default function ReviewerHistory() {
     if (statusFilter === '已打回' && s.status !== 'rejected') return false;
     if (typeFilter !== '全部' && !typesFrom(s).includes(typeFilter as ReimbursementType)) return false;
     if (!inTimeRange(timeRange, s.modified)) return false;
+    const q = orgFilter.trim().toLowerCase();
+    if (q && !(s.org_name || '').toLowerCase().includes(q)) return false;
     return true;
   });
+  /** 一键恢复默认筛选：状态=全部、类型=全部、时间=全部、社团=空 */
+  const resetFilters = () => { setStatusFilter('全部'); setTypeFilter('全部'); setTimeRange('all'); setOrgFilter(''); };
   const formatSize = (b: number) => b < 1024*1024 ? `${(b/1024).toFixed(1)} KB` : `${(b/(1024*1024)).toFixed(1)} MB`;
   const statusBadge = (s: string) => s === 'approved' ? <span className="badge badge-ok">已通过</span> : <span className="badge badge-error">已打回</span>;
 
@@ -157,7 +165,7 @@ export default function ReviewerHistory() {
         ))}
       </div>
       {preview?.form && (
-        <div className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer' } as CSSProperties} onClick={() => setView('form')}>
+        <div className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer' } as CSSProperties} onClick={() => { setView('form'); setFormFullscreen(true); }}>
           <div className="draft-info"><strong><Icon name="clipboard" size={16} /> 报销表</strong><span className="draft-meta">{preview.form.name}</span></div>
           <Icon name="arrow-right" size={16} />
         </div>
@@ -172,7 +180,14 @@ export default function ReviewerHistory() {
         <div>
           <button className="btn btn-ghost btn-sm" onClick={() => setView('list')} style={{ marginBottom: 12 }}><Icon name="arrow-left" size={14} /> 返回材料清单</button>
           <h4 className="section-title accent-left" style={{ '--accent': accent, paddingLeft: 8, borderLeftWidth: 3 } as CSSProperties}><Icon name="clipboard" size={16} /> 报销表</h4>
-          {preview?.form && <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ marginBottom: 4, textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>}
+          {preview?.form && (preview.form.html ? (
+            <>
+              <div className="excel-preview-scroll" dangerouslySetInnerHTML={{ __html: preview.form.html }} />
+              <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ marginTop: 8, textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>
+            </>
+          ) : (
+            <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ marginBottom: 4, textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>
+          ))}
         </div>
       );
     }
@@ -235,6 +250,8 @@ export default function ReviewerHistory() {
         <select className="form-input filter-status" value={timeRange} onChange={e => setTimeRange(e.target.value)} title="按时间范围筛选">
           {TIME_RANGES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+        <OrgAutocomplete value={orgFilter} onChange={setOrgFilter} orgs={ORGANIZATIONS} placeholder="按社团筛选..." />
+        <button className="btn btn-ghost btn-sm" onClick={resetFilters} title="一键恢复默认筛选"><Icon name="rotate-ccw" size={14} /> 恢复默认</button>
       </div>
 
       {loading ? <div className="loading"><span className="spinner" /> 加载中...</div>
@@ -247,11 +264,13 @@ export default function ReviewerHistory() {
                  style={{ '--accent': typeColor(typesFrom(s)[0]) } as CSSProperties}
                  onClick={() => openView(s.filename)}>
               <div className="draft-info">
-                <strong><Icon name="archive" size={16} /> {s.filename}</strong>
+                <strong><Icon name="archive" size={16} /> {s.org_name
+                  ? `${s.org_name}-${s.modified.slice(0, 10)}-报销申请`
+                  : s.filename}</strong>
                 <span className="draft-meta">{formatSize(s.size)} · {s.modified.slice(0,19).replace('T',' ')}{s.reviewer_email ? ` · 审核人：${s.reviewer_email}` : ''}</span>
               </div>
-              <TypeBadges types={typesFrom(s)} />
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div className="submission-type-col"><TypeBadges types={typesFrom(s)} /></div>
+              <div className="submission-right">
                 {statusBadge(s.status)}
                 {s.status === 'approved' && (
                   <a href={`/api/v1/submissions/download/${encodeURIComponent(s.filename)}`} download
@@ -328,6 +347,22 @@ export default function ReviewerHistory() {
             ) : (
               <img src={lightboxFile.data_url} alt={lightboxFile.name} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 6 }} />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 报销表全屏预览：点材料清单「报销表」自动进入，关闭回材料清单 */}
+      {formFullscreen && preview?.form?.html && (
+        <div className="modal-overlay" onClick={() => { setFormFullscreen(false); setView('list'); }}>
+          <div className="modal modal-preview-full" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3 className="modal-title"><Icon name="clipboard" size={16} /> 报销表预览</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setFormFullscreen(false); setView('list'); }}><Icon name="x" size={14} /> 关闭</button>
+            </div>
+            <div className="excel-preview-scroll" dangerouslySetInnerHTML={{ __html: preview.form.html }} />
+            <div className="modal-foot">
+              <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>
+            </div>
           </div>
         </div>
       )}

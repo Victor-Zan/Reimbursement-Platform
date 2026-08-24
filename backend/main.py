@@ -5,8 +5,11 @@
     cd backend
     python main.py
 """
+import io
 import json
 import os
+import shutil
+import tempfile
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -36,8 +39,9 @@ from draft_service import save_draft, list_drafts, get_draft, delete_draft
 from ocr import get_ocr_engine
 from ocr_field_mapping import OCRResult, InvoiceItem
 from validator import validate_form, build_form_data
-from excel_generator import generate_reimbursement_excel
+from excel_generator import generate_reimbursement_excel, workbook_to_html
 from packager import create_submission_package
+import openpyxl
 
 app = FastAPI(
     title="报销自动化平台",
@@ -237,6 +241,23 @@ async def generate_excel(data: dict):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=os.path.basename(filepath),
     )
+
+
+@app.post("/api/v1/generate-preview")
+async def generate_excel_preview(data: dict):
+    """
+    生成报销表并渲染为 HTML 表格供浏览器内预览（写临时目录，不落提交目录）。
+    """
+    form = build_form_data(data)
+    tmp_dir = tempfile.mkdtemp(prefix="reimb_preview_")
+    try:
+        filepath = generate_reimbursement_excel(form, tmp_dir)
+        wb = openpyxl.load_workbook(filepath)
+        return {"success": True, "html": workbook_to_html(wb)}
+    except Exception as e:
+        raise HTTPException(500, f"Excel预览失败: {str(e)}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @app.post("/api/v1/submit")
@@ -463,12 +484,13 @@ async def submit_package(request: Request):
                 # 多类型：material_paths 嵌套 {类型: {材料key: 路径列表}}
                 form_payload = {"form": full_form, "material_paths": material_paths_by_type}
             _cur.execute(
-                "INSERT INTO submissions (zip_filename, user_email, reimb_type, reimb_types, status, activity_name, parent_id, form_data) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO submissions (zip_filename, user_email, reimb_type, reimb_types, status, activity_name, org_name, parent_id, form_data) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (zip_name, user_email or "", types[0] if len(types) == 1 else "mixed",
                  json.dumps(types),
                  "resubmitted" if parent_id is not None else "pending",
-                 activity_name, parent_id,
+                 activity_name, org_name or "",
+                 parent_id,
                  json.dumps(form_payload, ensure_ascii=False)),
             )
         _conn.commit()
@@ -587,7 +609,8 @@ async def api_review_list():
     try:
         with _conn.cursor() as _cur:
             _cur.execute("""
-                SELECT s.id, s.zip_filename, s.status, s.reimb_type, s.reimb_types, s.created_at,
+                SELECT s.id, s.zip_filename, s.org_name, s.status, s.reimb_type, s.reimb_types, s.created_at,
+                       s.form_data->'form'->>'actual_total' AS total_amount,
                        ann.reviewer_email, ann.created_at AS reviewed_at
                 FROM submissions s
                 LEFT JOIN LATERAL (
@@ -597,7 +620,7 @@ async def api_review_list():
                 ORDER BY s.updated_at DESC, s.id DESC
             """)
             for row in _cur.fetchall():
-                _, fname, status, rtype, rtypes, created_at, reviewer_email, reviewed_at = row
+                _, fname, org_name, status, rtype, rtypes, created_at, total_amount, reviewer_email, reviewed_at = row
                 fpath = os.path.join(SUBMISSIONS_DIR, fname)
                 if os.path.isfile(fpath):
                     stat = os.stat(fpath)
@@ -608,6 +631,8 @@ async def api_review_list():
                     "filename": fname,
                     "size": size,
                     "modified": modified,
+                    "org_name": org_name or "",
+                    "total_amount": total_amount or "",
                     "status": status or "pending",
                     "reviewer_email": reviewer_email or "",
                     "reviewed_at": reviewed_at.isoformat() if reviewed_at else "",
@@ -867,14 +892,14 @@ async def api_list_submissions(user_email: str = ""):
         with _conn.cursor() as _cur:
             if user_email:
                 _cur.execute(
-                    "SELECT id, parent_id, zip_filename, reimb_type, reimb_types, status, created_at FROM submissions "
+                    "SELECT id, parent_id, zip_filename, org_name, activity_name, reimb_type, reimb_types, status, created_at FROM submissions "
                     "WHERE user_email = %s ORDER BY created_at DESC, id DESC",
                     (user_email,))
                 rows = _cur.fetchall()
                 # 已被重传取代的旧单直接跳过（成员端只显示每条申请的最新版本；
                 # DB 行/批注/ZIP 保留，审核员端仍可见）
                 parent_ids = {r[1] for r in rows if r[1] is not None}
-                for rid, parent_id, fname, rtype, rtypes, status, created_at in rows:
+                for rid, parent_id, fname, org_name, activity_name, rtype, rtypes, status, created_at in rows:
                     if rid in parent_ids:
                         continue
                     fpath = os.path.join(SUBMISSIONS_DIR, fname)
@@ -887,6 +912,8 @@ async def api_list_submissions(user_email: str = ""):
                         "filename": fname,
                         "size": size,
                         "modified": modified,
+                        "org_name": org_name or "",
+                        "activity_name": activity_name or "",
                         "reimb_type": rtype or "vat",
                         "reimb_types": rtypes if isinstance(rtypes, list) and rtypes else [rtype or "vat"],
                         "status": status or "pending",
@@ -960,9 +987,17 @@ async def api_preview_submission(filename: str):
                 if key:
                     materials[key].append(_entry(data, name))
                 elif folder == "报销表":
+                    # 读回 xlsx 渲染 HTML 供浏览器内预览；失败（损坏等）时 html 为空，前端回退下载
+                    form_html = ""
+                    try:
+                        wb = openpyxl.load_workbook(io.BytesIO(data))
+                        form_html = workbook_to_html(wb)
+                    except Exception:
+                        form_html = ""
                     form = {
                         "name": name,
                         "download_url": f"/api/v1/submissions/download/{filename}",
+                        "html": form_html,
                     }
 
     # 无分段（历史平铺 ZIP）：按 DB 类型兜底生成 type_materials

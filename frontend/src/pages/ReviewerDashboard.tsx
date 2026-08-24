@@ -61,7 +61,9 @@ export default function ReviewerDashboard({ user }: Props) {
           <h3 className="section-title"><span className="dot dot--danger" /> 待重审材料</h3>
           {resubmittedList.map((s: any, i: number) => (
             <div key={i} className="submission-item" style={{ cursor: 'pointer' }} onClick={() => navigate('/reviewer/materials')}>
-              <div className="draft-info"><strong><Icon name="archive" size={16} /> {s.filename}</strong><span className="draft-meta">{s.modified.slice(0,19).replace('T',' ')}</span></div>
+              <div className="draft-info"><strong><Icon name="archive" size={16} /> {s.org_name
+                ? `${s.org_name}-${s.modified.slice(0, 10)}-报销申请`
+                : s.filename}</strong><span className="draft-meta">{s.modified.slice(0,19).replace('T',' ')}</span></div>
               <span className="badge badge-purple">重审</span>
             </div>
           ))}

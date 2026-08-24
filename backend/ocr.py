@@ -301,15 +301,25 @@ class BaiduOCREngine(BaseOCREngine):
         return self._access_token
 
     def recognize_invoice(self, image_bytes: bytes, filename: str = "") -> OCRResult:
-        token = self._get_access_token()
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
         is_pdf = filename.lower().endswith(".pdf")
         param_key = "pdf_file" if is_pdf else "image"
 
+        headers = {}
+        if BAIDU_OCR_API_KEY.startswith("bce-v3/"):
+            # 新版 IAM API-Key 认证（bce-v3/ALTAK-... 格式）：Bearer 头直连，无需 access_token
+            headers["Authorization"] = f"Bearer {BAIDU_OCR_API_KEY}"
+            url = BAIDU_OCR_VAT_INVOICE_URL
+        else:
+            # 旧版 AK/SK 认证：先取 access_token 再调用
+            token = self._get_access_token()
+            url = f"{BAIDU_OCR_VAT_INVOICE_URL}?access_token={token}"
+
         try:
             resp = requests.post(
-                f"{BAIDU_OCR_VAT_INVOICE_URL}?access_token={token}",
+                url,
                 data={param_key: b64_image},
+                headers=headers,
                 timeout=30,
             )
             resp.raise_for_status()
@@ -320,6 +330,10 @@ class BaiduOCREngine(BaseOCREngine):
         return self._parse_response(api_result)
 
     def _parse_response(self, data: dict) -> OCRResult:
+        if data.get("error_code"):
+            # 百度侧返回错误（如未开通服务/配额不足），透传给用户便于排查
+            return OCRResult(errors=[f"百度OCR错误 {data['error_code']}: {data.get('error_msg', '')}"])
+
         wr = data.get("words_result", {})
 
         def get_word(key: str, default=""):

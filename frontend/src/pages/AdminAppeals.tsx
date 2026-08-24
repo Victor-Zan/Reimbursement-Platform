@@ -10,7 +10,7 @@ import { useFeedback } from '../components/Feedback';
 interface Props { user: any; }
 interface Appeal { id: number; submission_id: number | null; submission_zip: string; user_email: string; reason: string; status: string; admin_email: string; created_at: string; reimb_type?: string; reimb_types?: string[]; submission_status?: string; }
 interface PreviewFile { name: string; data_url: string; }
-interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string } | null; }
+interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string; html?: string } | null; }
 
 /** 报销表批注快捷模板 */
 const FORM_QUICK = ['已复核，同意报销', '维持审核员打回决定', '材料已核对，予以通过', '材料仍不符合要求，维持打回'];
@@ -78,6 +78,7 @@ export default function AdminAppeals({ user }: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const [view, setView] = useState<ReviewView>('list');
   const [lightbox, setLightbox] = useState<{ files: PreviewFile[]; index: number; label: string } | null>(null);
+  const [formFullscreen, setFormFullscreen] = useState(false);
 
   const loadAppeals = async () => {
     setLoading(true);
@@ -221,7 +222,7 @@ export default function AdminAppeals({ user }: Props) {
         ))}
       </div>
       {preview?.form && (
-        <div className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer' } as CSSProperties} onClick={() => setView('form')}>
+        <div className="submission-item accent-left" style={{ '--accent': accent, cursor: 'pointer' } as CSSProperties} onClick={() => { setView('form'); setFormFullscreen(true); }}>
           <div className="draft-info"><strong><Icon name="clipboard" size={16} /> 报销表</strong><span className="draft-meta">{preview.form.name}</span></div>
           {formComment && formComment.trim() && <span className="badge badge-gold" title="已填处理意见">已批注</span>}
           <Icon name="arrow-right" size={16} />
@@ -237,7 +238,14 @@ export default function AdminAppeals({ user }: Props) {
         <div>
           <button className="btn btn-ghost btn-sm" onClick={() => setView('list')} style={{ marginBottom: 12 }}><Icon name="arrow-left" size={14} /> 返回材料清单</button>
           <h4 className="section-title accent-left" style={{ '--accent': accent, paddingLeft: 8, borderLeftWidth: 3 } as CSSProperties}><Icon name="clipboard" size={16} /> 报销表</h4>
-          {preview?.form && <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ marginBottom: 4, textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>}
+          {preview?.form && (preview.form.html ? (
+            <>
+              <div className="excel-preview-scroll" dangerouslySetInnerHTML={{ __html: preview.form.html }} />
+              <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ marginTop: 8, textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>
+            </>
+          ) : (
+            <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ marginBottom: 4, textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>
+          ))}
           {canResolve && <CommentBox label="报销表处理意见" comment={formComment} setComment={setFormComment} quickComments={FORM_QUICK} />}
         </div>
       );
@@ -315,8 +323,8 @@ export default function AdminAppeals({ user }: Props) {
                 <strong><Icon name="user" size={16} /> {a.user_email}</strong>
                 <span className="draft-meta"><Icon name="archive" size={13} /> {a.submission_zip} · {a.reason} · {a.created_at.slice(0, 19).replace('T', ' ')}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <TypeBadges types={typesFrom(a)} />
+              <div className="submission-type-col"><TypeBadges types={typesFrom(a)} /></div>
+              <div className="submission-right">
                 {a.submission_status === 'resubmitted' && <span className="badge badge-purple">已重新提交</span>}
                 {appealStatusBadge(a.status)}
               </div>
@@ -411,6 +419,25 @@ export default function AdminAppeals({ user }: Props) {
             ) : (
               <img src={lightboxFile.data_url} alt={lightboxFile.name} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 6 }} />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 报销表全屏预览：点材料清单「报销表」自动进入，关闭回材料清单 */}
+      {formFullscreen && preview?.form?.html && (
+        <div className="modal-overlay" onClick={() => { setFormFullscreen(false); setView('list'); }}>
+          <div className="modal modal-preview-full" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3 className="modal-title"><Icon name="clipboard" size={16} /> 报销表预览</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setFormFullscreen(false); setView('list'); }}><Icon name="x" size={14} /> 关闭</button>
+            </div>
+            <div className="excel-preview-scroll" dangerouslySetInnerHTML={{ __html: preview.form.html }} />
+            <div style={{ padding: '0 20px' }}>
+              {canResolve && <CommentBox label="报销表处理意见" comment={formComment} setComment={setFormComment} quickComments={FORM_QUICK} />}
+            </div>
+            <div className="modal-foot">
+              <a href={preview.form.download_url} download className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}><Icon name="download" size={14} /> 下载 {preview.form.name}</a>
+            </div>
           </div>
         </div>
       )}

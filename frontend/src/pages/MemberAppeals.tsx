@@ -7,7 +7,7 @@ import { useFeedback } from '../components/Feedback';
 
 interface Props { user: any; }
 interface AppealItem { id: number; submission_zip: string; reimb_type?: string; reimb_types?: string[]; reason: string; status: string; created_at: string; }
-interface SubmissionFile { filename: string; size: number; modified: string; reimb_type?: string; reimb_types?: string[]; status?: string; }
+interface SubmissionFile { filename: string; size: number; modified: string; org_name?: string; activity_name?: string; reimb_type?: string; reimb_types?: string[]; status?: string; }
 
 /** 社团成员端：意见反馈（申诉被打回的报销申请，可多选 + 共同理由）。 */
 export default function MemberAppeals({ user }: Props) {
@@ -105,7 +105,9 @@ export default function MemberAppeals({ user }: Props) {
                          checked={selected.includes(s.filename)}
                          disabled={blocked}
                          onChange={e => toggleSelect(s.filename, e.target.checked)} />
-                  <span className="form-check-label">{s.filename}</span>
+                  <span className="form-check-label">{s.org_name
+                    ? `${s.org_name}-${s.activity_name ? `${s.activity_name}-` : ''}${s.modified.slice(0, 10)}-报销申请`
+                    : s.filename}</span>
                   <TypeBadges types={typesFrom(s)} />
                   {blocked && <span className="badge badge-purple">反馈处理中</span>}
                 </label>

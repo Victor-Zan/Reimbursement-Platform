@@ -36,6 +36,8 @@ export default function ReviewSubmit({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   // 本次申请的类型（旧数据回退：从发票标签去重）
   const types: ReimbursementType[] = formData.types?.length
     ? formData.types
@@ -63,6 +65,24 @@ export default function ReviewSubmit({
       toast('Excel生成失败，请检查后端服务', 'error');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handlePreview = async () => {
+    setPreviewing(true);
+    try {
+      const resp = await fetch('/api/v1/generate-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      if (!resp.ok) throw new Error('预览失败');
+      const j = await resp.json();
+      setPreviewHtml(j.html || '');
+    } catch {
+      toast('报销表生成失败，请检查后端服务', 'error');
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -268,13 +288,13 @@ export default function ReviewSubmit({
               </button>
               <button
                 className="btn btn-secondary"
-                onClick={handleDownloadExcel}
-                disabled={downloading || submitting}
+                onClick={handlePreview}
+                disabled={previewing || submitting}
               >
-                {downloading ? (
+                {previewing ? (
                   <><span className="spinner" /> 生成中...</>
                 ) : (
-                  <><Icon name="download" size={15} /> 预览Excel报销表</>
+                  <><Icon name="eye" size={15} /> 预览Excel报销表</>
                 )}
               </button>
               <button
@@ -291,6 +311,24 @@ export default function ReviewSubmit({
             </div>
           </div>
         </>
+      )}
+
+      {/* 报销表全屏预览（xlsx 由后端渲染为 HTML 表格） */}
+      {previewHtml !== null && (
+        <div className="modal-overlay" onClick={() => setPreviewHtml(null)}>
+          <div className="modal modal-preview-full" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3 className="modal-title"><Icon name="clipboard" size={16} /> 报销表预览</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPreviewHtml(null)}><Icon name="x" size={14} /> 关闭</button>
+            </div>
+            <div className="excel-preview-scroll" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            <div className="modal-foot">
+              <button className="btn btn-secondary btn-sm" onClick={handleDownloadExcel} disabled={downloading}>
+                {downloading ? <><span className="spinner" /> 生成中...</> : <><Icon name="download" size={14} /> 下载 Excel</>}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
