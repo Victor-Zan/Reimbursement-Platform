@@ -1,20 +1,24 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { typesFrom } from '../config/materials';
+import type { CSSProperties } from 'react';
+import { typesFrom, typeColor } from '../config/materials';
 import { TIME_RANGES, inTimeRange } from '../utils/timeRange';
 import TypeBadges from '../components/TypeBadges';
+import SubmissionDetailModal from '../components/SubmissionDetailModal';
 import Icon from '../components/Icon';
 
 interface Props { user: any; }
 interface SubmissionFile { filename: string; size: number; modified: string; org_name?: string; activity_name?: string; reimb_type?: string; reimb_types?: string[]; status?: string; }
 
-/** 社团成员端：查看历史提交（独立页面，替代原首页弹窗，全宽展示避免排版拥挤）。 */
+/** 报销人端：查看历史提交（独立页面，替代原首页弹窗，全宽展示避免排版拥挤）。 */
 export default function MemberHistory({ user }: Props) {
   const navigate = useNavigate();
   const [submissions, setSubmissions] = useState<SubmissionFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [timeRange, setTimeRange] = useState('all');
+  // 点击条目打开详情弹窗（与审核员端历史审核一致）
+  const [selected, setSelected] = useState<SubmissionFile | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -62,16 +66,27 @@ export default function MemberHistory({ user }: Props) {
       {loading ? <div className="loading"><span className="spinner" /> 加载中...</div>
        : filtered.length === 0 ? <div className="empty"><div className="empty-icon"><Icon name="folder" size={20} /></div>暂无提交记录</div>
        : <div className="submission-list">{filtered.map((s, i) => (
-          <div key={i} className="submission-item">
+          <div key={i}
+               className={`submission-item ${selected?.filename === s.filename ? 'is-selected' : 'accent-left'}`}
+               style={{ '--accent': typeColor(typesFrom(s)[0]) } as CSSProperties}
+               onClick={() => setSelected(s)}>
             <div className="draft-info">
               <strong><Icon name="archive" size={16} /> {titleOf(s)}</strong>
               <span className="draft-meta">{formatSize(s.size)} · {formatTime(s.modified)}</span>
             </div>
-            <TypeBadges types={typesFrom(s)} />
+            <div className="submission-type-col"><TypeBadges types={typesFrom(s)} /></div>
             {statusBadge(s.status || '')}
-            <a href={`/api/v1/submissions/download/${encodeURIComponent(s.filename)}`} download className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}><Icon name="download" size={14} /> 下载</a>
+            <a href={`/api/v1/submissions/download/${encodeURIComponent(s.filename)}`} download className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }} onClick={e => e.stopPropagation()}><Icon name="download" size={14} /> 下载</a>
           </div>
         ))}</div>}
+
+      {selected && (
+        <SubmissionDetailModal
+          submission={selected}
+          title={titleOf(selected)}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }
