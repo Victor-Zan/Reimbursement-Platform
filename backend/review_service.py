@@ -119,6 +119,39 @@ def reject_submission(
         conn.close()
 
 
+REIMBURSE_PROGRESS_VALUES = ("in_process", "reimbursed")
+
+
+def update_reimburse_progress(submission_zip: str, progress: str) -> dict:
+    """审核员更新已通过申请的报销进度（in_process 报销流程中 / reimbursed 已报销）。
+
+    只 UPDATE submissions，不写 review_annotations（避免污染 7 天状态收敛逻辑）。
+    """
+    if progress not in REIMBURSE_PROGRESS_VALUES:
+        return {"success": False, "error": "无效的报销进度状态"}
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, status FROM submissions WHERE zip_filename = %s",
+                (submission_zip,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return {"success": False, "error": "报销申请不存在"}
+            sub_id, status = row
+            if status != "approved":
+                return {"success": False, "error": "仅已通过的报销申请可更新报销进度"}
+            cur.execute(
+                "UPDATE submissions SET reimburse_progress = %s, updated_at = NOW() WHERE id = %s",
+                (progress, sub_id),
+            )
+            conn.commit()
+            return {"success": True}
+    finally:
+        conn.close()
+
+
 def resolve_appeal(
     appeal_id: int,
     admin_email: str,

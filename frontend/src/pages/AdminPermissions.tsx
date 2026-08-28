@@ -52,7 +52,7 @@ export default function AdminPermissions() {
                 <strong>{a.email}</strong>
                 <span className="draft-meta">{a.reason || '无申请原因'} · {a.created_at.slice(0, 19).replace('T', ' ')}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div className="submission-right">
                 {a.role === 'admin' ? <span className="badge badge-purple">管理员</span> : <span className="badge badge-gold">审核员</span>}
                 {a.status === 'approved' ? (
                   <span className="badge badge-ok">已通过</span>

@@ -8,7 +8,7 @@ import SubmissionDetailModal from '../components/SubmissionDetailModal';
 import Icon from '../components/Icon';
 
 interface Props { user: any; }
-interface SubmissionFile { filename: string; size: number; modified: string; org_name?: string; activity_name?: string; reimb_type?: string; reimb_types?: string[]; status?: string; }
+interface SubmissionFile { filename: string; size: number; modified: string; org_name?: string; activity_name?: string; reimb_type?: string; reimb_types?: string[]; status?: string; reimburse_progress?: string; }
 
 /** 报销人端：查看历史提交（独立页面，替代原首页弹窗，全宽展示避免排版拥挤）。 */
 export default function MemberHistory({ user }: Props) {
@@ -52,7 +52,7 @@ export default function MemberHistory({ user }: Props) {
     <div>
       <div className="page-head">
         <h1><Icon name="folder" size={22} /> 查看历史提交</h1>
-        <p className="page-head-sub">我的报销提交记录，已通过的申请可直接下载 ZIP</p>
+        <p className="page-head-sub">我的报销提交记录，已通过的申请可直接下载 ZIP，并会显示报销进度状态</p>
       </div>
       <button className="btn btn-ghost btn-sm" onClick={() => navigate('/member')} style={{ marginBottom: 16 }}><Icon name="arrow-left" size={14} /> 返回首页</button>
 
@@ -74,9 +74,16 @@ export default function MemberHistory({ user }: Props) {
               <strong><Icon name="archive" size={16} /> {titleOf(s)}</strong>
               <span className="draft-meta">{formatSize(s.size)} · {formatTime(s.modified)}</span>
             </div>
+            <div className="submission-progress-col">
+              {s.status === 'approved' && (s.reimburse_progress === 'reimbursed'
+                ? <span className="badge badge-gold">已报销</span>
+                : <span className="badge badge-info">报销流程中</span>)}
+            </div>
             <div className="submission-type-col"><TypeBadges types={typesFrom(s)} /></div>
-            {statusBadge(s.status || '')}
-            <a href={`/api/v1/submissions/download/${encodeURIComponent(s.filename)}`} download className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }} onClick={e => e.stopPropagation()}><Icon name="download" size={14} /> 下载</a>
+            <div className="submission-right">
+              {statusBadge(s.status || '')}
+              <a href={`/api/v1/submissions/download/${encodeURIComponent(s.filename)}`} download className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }} onClick={e => e.stopPropagation()}><Icon name="download" size={14} /> 下载</a>
+            </div>
           </div>
         ))}</div>}
 

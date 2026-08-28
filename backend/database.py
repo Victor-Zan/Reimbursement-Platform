@@ -167,6 +167,19 @@ def init_db():
                   AND reimb_types IS DISTINCT FROM form_data->'form'->'types';
             """)
 
+            # 报销进度状态：审核员为已通过申请标记报销进度（in_process 报销流程中 / reimbursed 已报销）
+            # 默认"报销流程中"，历史数据同样生效（ADD COLUMN ... DEFAULT 自动回填 + 兜底 UPDATE）
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE submissions ADD COLUMN reimburse_progress VARCHAR(20) DEFAULT 'in_process';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
+            cur.execute("""
+                UPDATE submissions SET reimburse_progress = 'in_process'
+                WHERE reimburse_progress IS NULL OR reimburse_progress = '';
+            """)
+
             # ---- 审核批注表（挂 submission_id）----
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS review_annotations (

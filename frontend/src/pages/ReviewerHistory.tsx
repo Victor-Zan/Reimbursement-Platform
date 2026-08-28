@@ -8,8 +8,9 @@ import TypeBadges from '../components/TypeBadges';
 import OrgAutocomplete from '../components/OrgAutocomplete';
 import Icon from '../components/Icon';
 import { ORGANIZATIONS } from '../config/organizations';
+import { useFeedback } from '../components/Feedback';
 
-interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; org_name?: string; reimb_type?: string; reimb_types?: string[]; }
+interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; org_name?: string; activity_name?: string; reimb_type?: string; reimb_types?: string[]; reimburse_progress?: string; }
 interface PreviewFile { name: string; data_url: string; }
 interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string; html?: string } | null; }
 
@@ -46,6 +47,7 @@ function PdfPreview({ dataUrl, name }: { dataUrl: string; name: string }) {
 /** 审核员端：历史审核（已通过/已打回的报销申请，只读查看 + 已通过可下载 ZIP）。 */
 export default function ReviewerHistory() {
   const navigate = useNavigate();
+  const { toast } = useFeedback();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
@@ -56,6 +58,9 @@ export default function ReviewerHistory() {
   const [typeFilter, setTypeFilter] = useState('全部');
   const [timeRange, setTimeRange] = useState('all');
   const [orgFilter, setOrgFilter] = useState('');
+  // 报销进度选择弹窗状态
+  const [progressTarget, setProgressTarget] = useState<Submission | null>(null);
+  const [progressSaving, setProgressSaving] = useState(false);
 
   // ---- 查看窗口状态 ----
   const [fullscreen, setFullscreen] = useState(false);
@@ -69,6 +74,19 @@ export default function ReviewerHistory() {
     setLoading(false);
   };
   useEffect(() => { loadSubmissions(); }, []);
+
+  // 更新已通过申请的报销进度（in_process 报销流程中 / reimbursed 已报销）
+  const updateProgress = async (progress: string) => {
+    if (!progressTarget) return;
+    setProgressSaving(true);
+    try {
+      const r = await fetch('/api/v1/review/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submission_zip: progressTarget.filename, progress }) });
+      const j = await r.json();
+      if (j.success) { toast('报销进度已更新', 'success'); setProgressTarget(null); loadSubmissions(); }
+      else { toast(j.error || '更新失败', 'error'); }
+    } catch { toast('网络错误，更新失败', 'error'); }
+    setProgressSaving(false);
+  };
 
   const openView = async (filename: string) => {
     setSelected(filename);
@@ -137,6 +155,14 @@ export default function ReviewerHistory() {
   const resetFilters = () => { setStatusFilter('全部'); setTypeFilter('全部'); setTimeRange('all'); setOrgFilter(''); };
   const formatSize = (b: number) => b < 1024*1024 ? `${(b/1024).toFixed(1)} KB` : `${(b/(1024*1024)).toFixed(1)} MB`;
   const statusBadge = (s: string) => s === 'approved' ? <span className="badge badge-ok">已通过</span> : <span className="badge badge-error">已打回</span>;
+  // 报销进度徽章：仅已通过行可点（弹选择框），其余状态不渲染（列 div 空占位保持对齐）
+  const progressBadge = (s: Submission) => s.status !== 'approved' ? null : (
+    <span className={`badge ${s.reimburse_progress === 'reimbursed' ? 'badge-gold' : 'badge-info'}`}
+          style={{ cursor: 'pointer' }} title="点击更新报销进度"
+          onClick={e => { e.stopPropagation(); setProgressTarget(s); }}>
+      {s.reimburse_progress === 'reimbursed' ? '已报销' : '报销流程中'}
+    </span>
+  );
 
   // ---- 查看窗口：清单视图（多类型按类型分列） ----
   const renderList = () => (
@@ -236,7 +262,7 @@ export default function ReviewerHistory() {
     <div>
       <div className="page-head">
         <h1><Icon name="folder" size={22} /> 历史审核</h1>
-        <p className="page-head-sub">已通过与已打回的报销申请（只读），已通过的申请可直接下载 ZIP</p>
+        <p className="page-head-sub">已通过与已打回的报销申请（只读），已通过的申请可直接下载 ZIP，点击报销进度列可更新报销进度</p>
       </div>
       <button className="btn btn-ghost btn-sm" onClick={() => navigate('/reviewer')} style={{ marginBottom: 16 }}><Icon name="arrow-left" size={14} /> 返回</button>
       <div className="filter-bar">
@@ -265,10 +291,11 @@ export default function ReviewerHistory() {
                  onClick={() => openView(s.filename)}>
               <div className="draft-info">
                 <strong><Icon name="archive" size={16} /> {s.org_name
-                  ? `${s.org_name}-${s.modified.slice(0, 10)}-报销申请`
+                  ? `${s.org_name}${s.activity_name ? `-${s.activity_name}` : ''}-${s.modified.slice(0, 10)}-报销申请`
                   : s.filename}</strong>
                 <span className="draft-meta">{formatSize(s.size)} · {s.modified.slice(0,19).replace('T',' ')}{s.reviewer_email ? ` · 审核人：${s.reviewer_email}` : ''}</span>
               </div>
+              <div className="submission-progress-col">{progressBadge(s)}</div>
               <div className="submission-type-col"><TypeBadges types={typesFrom(s)} /></div>
               <div className="submission-right">
                 {statusBadge(s.status)}
@@ -280,6 +307,27 @@ export default function ReviewerHistory() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 报销进度选择弹窗（仅已通过申请可更新） */}
+      {progressTarget && (
+        <div className="modal-overlay" onClick={() => { if (!progressSaving) setProgressTarget(null); }}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3 className="modal-title"><Icon name="refresh" size={16} /> 报销进度</h3>
+            </div>
+            <div className="modal-body">
+              <p className="card-sub" style={{ marginBottom: 12 }}>请选择 {progressTarget.org_name || progressTarget.filename} 的报销进度</p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-secondary" style={{ flex: 1 }} disabled={progressSaving} onClick={() => updateProgress('in_process')}><Icon name="refresh" size={15} /> 报销流程中</button>
+                <button className="btn btn-success" style={{ flex: 1 }} disabled={progressSaving} onClick={() => updateProgress('reimbursed')}><Icon name="check" size={15} /> 已报销</button>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-ghost btn-sm" disabled={progressSaving} onClick={() => setProgressTarget(null)}>取消</button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -609,7 +609,7 @@ async def api_review_list():
     try:
         with _conn.cursor() as _cur:
             _cur.execute("""
-                SELECT s.id, s.zip_filename, s.org_name, s.status, s.reimb_type, s.reimb_types, s.created_at,
+                SELECT s.id, s.zip_filename, s.org_name, s.activity_name, s.status, s.reimburse_progress, s.reimb_type, s.reimb_types, s.created_at,
                        s.form_data->'form'->>'actual_total' AS total_amount,
                        ann.reviewer_email, ann.created_at AS reviewed_at
                 FROM submissions s
@@ -620,7 +620,7 @@ async def api_review_list():
                 ORDER BY s.updated_at DESC, s.id DESC
             """)
             for row in _cur.fetchall():
-                _, fname, org_name, status, rtype, rtypes, created_at, total_amount, reviewer_email, reviewed_at = row
+                _, fname, org_name, activity_name, status, progress, rtype, rtypes, created_at, total_amount, reviewer_email, reviewed_at = row
                 fpath = os.path.join(SUBMISSIONS_DIR, fname)
                 if os.path.isfile(fpath):
                     stat = os.stat(fpath)
@@ -632,8 +632,10 @@ async def api_review_list():
                     "size": size,
                     "modified": modified,
                     "org_name": org_name or "",
+                    "activity_name": activity_name or "",
                     "total_amount": total_amount or "",
                     "status": status or "pending",
+                    "reimburse_progress": progress or "in_process",
                     "reviewer_email": reviewer_email or "",
                     "reviewed_at": reviewed_at.isoformat() if reviewed_at else "",
                     "reimb_type": rtype or "vat",
@@ -677,6 +679,16 @@ async def api_reject(data: dict):
         data.get("material_comments", {}),
     )
     return result
+
+
+@app.post("/api/v1/review/progress")
+async def api_update_progress(data: dict):
+    """更新已通过申请的报销进度（in_process 报销流程中 / reimbursed 已报销）。"""
+    from review_service import update_reimburse_progress
+    return update_reimburse_progress(
+        data.get("submission_zip", ""),
+        data.get("progress", ""),
+    )
 
 
 # ---- 审核员申请 API ----
@@ -892,14 +904,14 @@ async def api_list_submissions(user_email: str = ""):
         with _conn.cursor() as _cur:
             if user_email:
                 _cur.execute(
-                    "SELECT id, parent_id, zip_filename, org_name, activity_name, reimb_type, reimb_types, status, created_at FROM submissions "
+                    "SELECT id, parent_id, zip_filename, org_name, activity_name, reimb_type, reimb_types, status, reimburse_progress, created_at FROM submissions "
                     "WHERE user_email = %s ORDER BY created_at DESC, id DESC",
                     (user_email,))
                 rows = _cur.fetchall()
                 # 已被重传取代的旧单直接跳过（成员端只显示每条申请的最新版本；
                 # DB 行/批注/ZIP 保留，审核员端仍可见）
                 parent_ids = {r[1] for r in rows if r[1] is not None}
-                for rid, parent_id, fname, org_name, activity_name, rtype, rtypes, status, created_at in rows:
+                for rid, parent_id, fname, org_name, activity_name, rtype, rtypes, status, progress, created_at in rows:
                     if rid in parent_ids:
                         continue
                     fpath = os.path.join(SUBMISSIONS_DIR, fname)
@@ -917,6 +929,7 @@ async def api_list_submissions(user_email: str = ""):
                         "reimb_type": rtype or "vat",
                         "reimb_types": rtypes if isinstance(rtypes, list) and rtypes else [rtype or "vat"],
                         "status": status or "pending",
+                        "reimburse_progress": progress or "in_process",
                         "file_missing": file_missing,
                     })
             # 无邮箱 = 返回空列表（成员端必须登录）

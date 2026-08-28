@@ -85,8 +85,8 @@ export default function MemberAppeals({ user }: Props) {
                 <strong><Icon name="archive" size={16} /> {a.submission_zip}</strong>
                 <span className="draft-meta">{a.reason} · {a.created_at.slice(0, 19).replace('T', ' ')}</span>
               </div>
-              <TypeBadges types={typesFrom(a)} />
-              {statusBadge(a.status)}
+              <div className="submission-type-col"><TypeBadges types={typesFrom(a)} /></div>
+              <div className="submission-right">{statusBadge(a.status)}</div>
             </div>
           ))}</div>}
       </div>

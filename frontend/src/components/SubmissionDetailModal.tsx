@@ -11,6 +11,7 @@ export interface SubmissionSummary {
   status?: string;
   reimb_type?: string;
   reimb_types?: string[];
+  reimburse_progress?: string;
 }
 
 interface PreviewFile { name: string; data_url: string; }
@@ -224,6 +225,9 @@ export default function SubmissionDetailModal({ submission, title, onClose }: Pr
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <TypeBadges types={types} />
                 {statusBadge(submission.status || '')}
+                {submission.status === 'approved' && (submission.reimburse_progress === 'reimbursed'
+                  ? <span className="badge badge-gold">已报销</span>
+                  : <span className="badge badge-info">报销流程中</span>)}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

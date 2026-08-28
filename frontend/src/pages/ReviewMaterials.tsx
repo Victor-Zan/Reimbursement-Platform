@@ -11,7 +11,7 @@ import { useFeedback } from '../components/Feedback';
 import { ORGANIZATIONS } from '../config/organizations';
 
 interface Props { user: any; }
-interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; reimb_type?: string; reimb_types?: string[]; org_name?: string; total_amount?: string; }
+interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; reimb_type?: string; reimb_types?: string[]; org_name?: string; activity_name?: string; total_amount?: string; }
 interface PreviewFile { name: string; data_url: string; }
 interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string; html?: string } | null; }
 
@@ -321,7 +321,7 @@ export default function ReviewMaterials({ user }: Props) {
                  style={{ '--accent': typeColor(typesFrom(s)[0]) } as CSSProperties}
                  onClick={() => openReview(s.filename)}>
               <div className="draft-info">
-                <strong><Icon name="archive" size={16} /> {s.org_name ? `${s.org_name}-${s.modified.slice(0,10)}-报销申请` : s.filename}</strong>
+                <strong><Icon name="archive" size={16} /> {s.org_name ? `${s.org_name}${s.activity_name ? `-${s.activity_name}` : ''}-${s.modified.slice(0,10)}-报销申请` : s.filename}</strong>
                 <span className="draft-meta">{s.modified.slice(0,19).replace('T',' ')} · {formatSize(s.size)}{s.reviewer_email ? ` · 审核人：${s.reviewer_email}` : ''}</span>
               </div>
               <div className="submission-type-col"><TypeBadges types={typesFrom(s)} /></div>

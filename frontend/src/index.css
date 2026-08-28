@@ -57,6 +57,10 @@
   --warning-strong: #92400E;
   --warning-soft: #FDF3E0;
   --warning-line: #F1DDB1;
+  --info: #2563EB;
+  --info-strong: #1D4ED8;
+  --info-soft: #EAF2FE;
+  --info-line: #C7DBF7;
   /* 旧别名（兼容迁移期残留的 var() 引用） */
   --primary-light: var(--primary-soft);
   --success-light: var(--success-soft);
@@ -675,6 +679,12 @@ select.form-input {
   background: var(--gold-soft);
   color: var(--gold-strong);
   border-color: var(--gold-line);
+}
+
+.badge-info {
+  background: var(--info-soft);
+  color: var(--info-strong);
+  border-color: var(--info-line);
 }
 
 /* 类型标签：中性底 + 数据驱动彩色圆点（.dot 内联背景色） */
@@ -1333,6 +1343,15 @@ td input.error {
   flex-wrap: nowrap;      /* 禁用原 wrap，避免竖排时徽章排回横排 */
   align-items: flex-start;
   gap: 4px;
+}
+/* 报销进度列：位于类型列左侧，定宽竖排，非已通过行为空占位保持对齐 */
+.submission-progress-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 96px; /* 容纳「报销流程中」徽章 */
+  flex-shrink: 0;
 }
 /* 列表行右侧状态/金额/操作列：定宽右对齐，右边缘成一条竖线 */
 .submission-right {
@@ -2174,27 +2193,6 @@ td input.error {
 .filter-sep {
   color: var(--text-tertiary);
   font-size: var(--fs-13);
-}
-
-/* ---- 27. Feedback Items ---- */
-.feedback-item {
-  padding: 12px 4px;
-  border-bottom: var(--hairline);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.feedback-item:last-child {
-  border-bottom: none;
-}
-
-.feedback-item-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
 }
 
 /* ---- 27c. 多类型报销：类型标签页 / 徽章组 / 审核分列 ---- */

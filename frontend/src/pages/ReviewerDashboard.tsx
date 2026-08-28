@@ -9,16 +9,12 @@ export default function ReviewerDashboard({ user }: Props) {
   const navigate = useNavigate();
   const { toast } = useFeedback();
   const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0, resubmitted: 0 });
-  const [resubmittedList, setResubmittedList] = useState<any[]>([]);
   const [showApply, setShowApply] = useState(false);
   const [applyEmail, setApplyEmail] = useState(user?.email || '');
   const [applyReason, setApplyReason] = useState('');
 
   useEffect(() => {
     fetch('/api/v1/review/stats').then(r => r.json()).then(j => { if (j.success) setStats(j.stats); }).catch(() => {});
-    fetch('/api/v1/review/submissions').then(r => r.json()).then(j => {
-      if (j.success) setResubmittedList(j.submissions.filter((s: any) => s.status === 'resubmitted').slice(0, 5));
-    }).catch(() => {});
   }, []);
 
   // 审核员申请成为管理员（申请逻辑与报销人端一致，发往管理员端审批）
@@ -54,21 +50,6 @@ export default function ReviewerDashboard({ user }: Props) {
           <div className="stat-card-label">已打回材料重审{stats.resubmitted > 0 && <span className="dot dot--danger" />}</div>
         </div>
       </div>
-
-      {/* 重审材料列表 */}
-      {resubmittedList.length > 0 && (
-        <div className="card" style={{ marginBottom: 24 }}>
-          <h3 className="section-title"><span className="dot dot--danger" /> 待重审材料</h3>
-          {resubmittedList.map((s: any, i: number) => (
-            <div key={i} className="submission-item" style={{ cursor: 'pointer' }} onClick={() => navigate('/reviewer/materials')}>
-              <div className="draft-info"><strong><Icon name="archive" size={16} /> {s.org_name
-                ? `${s.org_name}-${s.modified.slice(0, 10)}-报销申请`
-                : s.filename}</strong><span className="draft-meta">{s.modified.slice(0,19).replace('T',' ')}</span></div>
-              <span className="badge badge-purple">重审</span>
-            </div>
-          ))}
-        </div>
-      )}
 
       <div className="home-grid">
         <div className="home-card home-card-large" onClick={() => navigate('/reviewer/materials')}>
