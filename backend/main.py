@@ -1028,6 +1028,39 @@ async def api_preview_submission(filename: str):
             _conn2.close()
         type_materials = {types_list[0]: materials}
 
+    # 发票与报销表项目对应明细：读提交时保存的 form_data（与报销表 Excel 同一数据源），
+    # 按发票所属类型分组返回，前端与 type_materials 各类型的发票文件按序配对展示（同一配对规则见提交时的标注循环）
+    invoice_details: dict[str, list] = {}
+    from database import get_connection as _get_conn
+    _conn3 = _get_conn()
+    try:
+        with _conn3.cursor() as _cur3:
+            _cur3.execute("SELECT form_data FROM submissions WHERE zip_filename = %s", (filename,))
+            row = _cur3.fetchone()
+            if row and row[0]:
+                try:
+                    # psycopg2 对 JSON 列可能已解析为 dict，字符串时再 json.loads
+                    fd = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                    form_part = fd.get("form") or {}
+                    invs = form_part.get("invoices") or []
+                    form_types = form_part.get("types") or []
+                    for inv in invs:
+                        t = inv.get("reimb_type") or (form_types[0] if len(form_types) == 1 else "")
+                        if not t or t not in _TYPE_LABELS:
+                            continue
+                        invoice_details.setdefault(t, []).append({
+                            "invoice_total": inv.get("invoice_total", 0),
+                            "reimbursement_amount": inv.get("reimbursement_amount", 0),
+                            "items": [
+                                {"name": it.get("name", ""), "unit_price": it.get("unit_price", 0), "quantity": it.get("quantity", 0)}
+                                for it in (inv.get("items") or []) if it.get("name")
+                            ],
+                        })
+                except Exception:
+                    pass
+    finally:
+        _conn3.close()
+
     return {
         "success": True,
         "materials": materials,
@@ -1036,6 +1069,8 @@ async def api_preview_submission(filename: str):
         "invoices": materials["invoices"],
         "evidences": materials["evidence"],
         "form": form,
+        # 发票明细（与 type_materials 同键，按类型与发票文件同序配对）
+        "invoice_details": invoice_details,
     }
 
 

@@ -13,7 +13,11 @@ import { ORGANIZATIONS } from '../config/organizations';
 interface Props { user: any; }
 interface Submission { filename: string; size: number; modified: string; status: string; reviewer_email: string; reimb_type?: string; reimb_types?: string[]; org_name?: string; activity_name?: string; total_amount?: string; }
 interface PreviewFile { name: string; data_url: string; }
-interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string; html?: string } | null; }
+/** 发票明细行（报销表项目） */
+interface InvoiceItem { name: string; unit_price: number; quantity: number; }
+/** 单张发票的报销表项目备注（与发票文件同序配对） */
+interface InvoiceDetail { invoice_total: number; reimbursement_amount: number; items: InvoiceItem[]; }
+interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string; html?: string } | null; invoice_details?: Record<string, InvoiceDetail[]>; }
 
 /** 报销表批注快捷模板 */
 const FORM_QUICK = ['拼接信息中组织名称有误', '拼接信息中活动名称有误', '拼接信息中物品名称有误', '拼接信息中金额有误'];
@@ -85,6 +89,15 @@ export default function ReviewMaterials({ user }: Props) {
   const [view, setView] = useState<ReviewView>('list');
   const [lightbox, setLightbox] = useState<{ files: PreviewFile[]; index: number; label: string } | null>(null);
   const [formFullscreen, setFormFullscreen] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+
+  // 全屏报销表预览：进入即弹出审查提示气泡，4 秒后自动关闭（也可手动关闭）
+  useEffect(() => {
+    if (!formFullscreen) { setShowHint(false); return; }
+    setShowHint(true);
+    const timer = setTimeout(() => setShowHint(false), 4000);
+    return () => clearTimeout(timer);
+  }, [formFullscreen]);
 
   const loadSubmissions = async () => {
     setLoading(true);
@@ -291,6 +304,46 @@ export default function ReviewMaterials({ user }: Props) {
     );
   };
 
+  // 全屏报销表右侧发票面板：按类型分组，卡片可点开放大查看，下方备注该发票对应的报销表项目
+  const renderInvoiceSide = () => {
+    const invoiceTypes = types.filter(t => filesFor(t, 'invoices').length > 0);
+    if (invoiceTypes.length === 0) return <p className="empty" style={{ padding: 16 }}>无发票</p>;
+    return (
+      <div className="invoice-side">
+        {invoiceTypes.map(t => {
+          const files = filesFor(t, 'invoices');
+          const details = preview?.invoice_details?.[t] || [];
+          return (
+            <div key={t}>
+              <div className="review-column-head" style={{ '--accent': typeColor(t) } as CSSProperties}>
+                <TypeBadges types={[t]} />
+              </div>
+              {files.map((f, i) => {
+                const d = details[i];
+                return (
+                  <div key={i} className="invoice-card"
+                       title="点击放大查看"
+                       onClick={() => setLightbox({ files, index: i, label: TYPE_CONFIGS[t].label })}>
+                    <div className="invoice-card-head">
+                      <span className="invoice-card-name"><Icon name="receipt" size={14} /> {f.name}</span>
+                      {d && <span className="invoice-card-amount">¥{Number(d.reimbursement_amount || 0).toFixed(2)}</span>}
+                    </div>
+                    <div className="invoice-card-items">
+                      {d ? (d.items.length ? d.items.map((it, j) => (
+                        <div key={j} className="invoice-card-item">{it.name} ×{it.quantity} · 单价¥{Number(it.unit_price || 0).toFixed(2)}</div>
+                      )) : <div className="invoice-card-item is-empty">无明细项目</div>)
+                      : <div className="invoice-card-item is-empty">无项目数据</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const lightboxFile = lightbox ? lightbox.files[lightbox.index] : null;
 
   return (
@@ -402,7 +455,7 @@ export default function ReviewMaterials({ user }: Props) {
         </div>
       )}
 
-      {/* 报销表全屏预览：点材料清单「报销表」自动进入，关闭回材料清单 */}
+      {/* 报销表全屏预览：点材料清单「报销表」自动进入，关闭回材料清单；左侧报销表、右侧发票列 */}
       {formFullscreen && preview?.form?.html && (
         <div className="modal-overlay" onClick={() => { setFormFullscreen(false); setView('list'); }}>
           <div className="modal modal-preview-full" onClick={e => e.stopPropagation()}>
@@ -410,7 +463,21 @@ export default function ReviewMaterials({ user }: Props) {
               <h3 className="modal-title"><Icon name="clipboard" size={16} /> 报销表预览</h3>
               <button className="btn btn-ghost btn-sm" onClick={() => { setFormFullscreen(false); setView('list'); }}><Icon name="x" size={14} /> 关闭</button>
             </div>
-            <div className="excel-preview-scroll" dangerouslySetInnerHTML={{ __html: preview.form.html }} />
+            <div className="preview-split">
+              <div className="preview-sheet">
+                <div className="excel-preview-scroll" dangerouslySetInnerHTML={{ __html: preview.form.html }} />
+                {showHint && (
+                  <div className="hint-bubble">
+                    <div className="hint-bubble-head">
+                      <Icon name="info" size={15} /> 审查提示
+                      <button className="btn btn-ghost btn-sm" onClick={() => setShowHint(false)} title="关闭提示"><Icon name="x" size={12} /></button>
+                    </div>
+                    <p>请重点核对：表中报销项目是否均可报销？有无错报、重复报销的情况？</p>
+                  </div>
+                )}
+              </div>
+              {renderInvoiceSide()}
+            </div>
             <div style={{ padding: '0 20px' }}>
               <CommentBox label="报销表/拼接信息批注" comment={formComment} setComment={setFormComment} quickComments={FORM_QUICK} />
             </div>

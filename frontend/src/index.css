@@ -2125,6 +2125,157 @@ td input.error {
   border-top: var(--hairline);
 }
 
+/* 报销表全屏预览：左右分屏（左报销表 / 右发票列） */
+.preview-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.preview-sheet {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+}
+
+/* 右侧发票列：发票卡片可点开放大，卡片下方备注对应报销表项目 */
+.invoice-side {
+  width: 340px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-left: var(--hairline);
+  background: #FBFAFC;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.invoice-side .review-column-head {
+  padding: 4px 8px;
+}
+
+.invoice-card {
+  background: var(--surface);
+  border: var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.invoice-card:hover {
+  border-color: var(--primary-line);
+  box-shadow: 0 1px 6px rgba(124, 58, 237, .10);
+}
+
+.invoice-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.invoice-card-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+
+.invoice-card-amount {
+  flex-shrink: 0;
+  font-size: var(--fs-13);
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.invoice-card-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.invoice-card-item {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoice-card-item.is-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* 审查提示气泡（报销表全屏预览右下角，对话气泡样式，定时弹出） */
+.hint-bubble {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 264px;
+  background: #F3EDFE;
+  border: 1px solid var(--primary-line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 4px 16px rgba(80, 40, 150, .12);
+  z-index: 5;
+  animation: hint-in .35s var(--ease);
+}
+
+.hint-bubble::after {
+  content: '';
+  position: absolute;
+  right: 18px;
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  background: #F3EDFE;
+  border-right: 1px solid var(--primary-line);
+  border-bottom: 1px solid var(--primary-line);
+  transform: rotate(45deg);
+}
+
+.hint-bubble-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: var(--fs-13);
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+.hint-bubble-head .btn {
+  margin-left: auto;
+  padding: 0 4px;
+}
+
+.hint-bubble p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+@keyframes hint-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
 .excel-preview-scroll table {
   border-collapse: collapse;
   width: auto;
