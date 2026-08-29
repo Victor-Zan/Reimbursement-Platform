@@ -2494,11 +2494,19 @@ td input.error {
 }
 
 .success-panel .success-panel-remind {
-  display: inline-flex;
+  /* 块级 flex：提示词独占一行，按钮下放在下一行 */
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   font-weight: 600;
   color: var(--warning-strong);
+}
+
+.success-panel-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
 }
 
 /* ---- 29. Utilities ---- */

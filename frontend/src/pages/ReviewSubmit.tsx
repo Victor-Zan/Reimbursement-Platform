@@ -161,9 +161,10 @@ export default function ReviewSubmit({
             </p>
           )}
           <p className="success-panel-remind"><Icon name="alert-triangle" size={14} /> 请记得在社联坐班期间携带纸质材料（报销表 + 按序发票 + 活动凭证）提交至社联行政。</p>
-          <button className="btn btn-primary" onClick={onReset}>
-            发起新的报销申请
-          </button>
+          <div className="success-panel-actions">
+            <button className="btn btn-secondary" onClick={onReset}>返回首页</button>
+            <button className="btn btn-primary" onClick={onReset}>发起新的报销申请</button>
+          </div>
         </div>
       )}
 
