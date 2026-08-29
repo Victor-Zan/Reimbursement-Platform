@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ChangeEvent } from 'react';
 import { TYPE_MATERIALS, materialFor, typesFrom, materialByKey, typeLabel, typeColor, TYPE_CONFIGS } from '../config/materials';
 import type { ReimbursementType, MaterialKey } from '../types';
 import TypeBadges from '../components/TypeBadges';
@@ -8,7 +8,7 @@ import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
 
 interface Props { user: any; }
-interface Appeal { id: number; submission_id: number | null; submission_zip: string; user_email: string; reason: string; status: string; admin_email: string; created_at: string; reimb_type?: string; reimb_types?: string[]; submission_status?: string; }
+interface Appeal { id: number; submission_id: number | null; submission_zip: string; user_email: string; reason: string; status: string; admin_email: string; created_at: string; reimb_type?: string; reimb_types?: string[]; submission_status?: string; appeal_type?: string; proof_url?: string; }
 interface PreviewFile { name: string; data_url: string; }
 /** 发票明细行（报销表项目） */
 interface InvoiceItem { name: string; unit_price: number; quantity: number; }
@@ -77,6 +77,9 @@ export default function AdminAppeals({ user }: Props) {
   const [actionLoading, setActionLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('全部');
   const [typeFilter, setTypeFilter] = useState('全部');
+  // 打款证明（未到账申诉驳回时上传，resolve 一并提交）
+  const [proofFile, setProofFile] = useState<{ filename: string; url: string } | null>(null);
+  const [proofUploading, setProofUploading] = useState(false);
 
   // ---- 处理窗口状态 ----
   const [fullscreen, setFullscreen] = useState(false);
@@ -110,6 +113,7 @@ export default function AdminAppeals({ user }: Props) {
     setPreview(null);
     setReview(null);
     setFormComment(''); setMaterialComments({});
+    setProofFile(null);
     setFullscreen(false); setView('list'); setLightbox(null);
     setPreviewLoading(true);
     try {
@@ -123,11 +127,35 @@ export default function AdminAppeals({ user }: Props) {
     setPreviewLoading(false);
   };
 
+  /** 上传打款证明截图（保存于服务端，resolve 时随申诉记录；可重传覆盖） */
+  const handleUploadProof = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selected) return;
+    setProofUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('proof_file', file);
+      const r = await fetch(`/api/v1/admin/appeals/${selected.id}/proof`, { method: 'POST', body: fd });
+      const j = await r.json();
+      if (r.ok && j.success) {
+        setProofFile({ filename: j.proof_filename, url: j.proof_url });
+        toast('打款证明已上传', 'success');
+      } else {
+        toast(j.detail || '上传失败', 'error');
+      }
+    } catch { toast('网络错误', 'error'); }
+    setProofUploading(false);
+    e.target.value = '';
+  };
+
   const handleResolve = async (decision: 'approve' | 'reject') => {
     if (!selected) return;
+    const unreceived = selected.appeal_type === 'unreceived';
     const ok = await confirm({
-      message: decision === 'approve' ? '确认通过该报销申请？' : '确认打回该报销申请？',
-      tone: decision === 'approve' ? 'primary' : 'danger',
+      message: unreceived
+        ? (decision === 'approve' ? '确认未到账？报销进度将回到「报销流程中」重新处理打款。' : '确认已到账并驳回该申诉？')
+        : (decision === 'approve' ? '确认通过该报销申请？' : '确认打回该报销申请？'),
+      tone: unreceived ? 'primary' : (decision === 'approve' ? 'primary' : 'danger'),
     });
     if (!ok) return;
     setActionLoading(true);
@@ -135,7 +163,7 @@ export default function AdminAppeals({ user }: Props) {
       const r = await fetch(`/api/v1/admin/appeals/${selected.id}/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ admin_email: user.email, decision, form_comment: formComment, material_comments: materialComments }),
+        body: JSON.stringify({ admin_email: user.email, decision, form_comment: formComment, material_comments: materialComments, proof_filename: proofFile?.filename || '' }),
       });
       const j = await r.json();
       if (r.ok && j.success) {
@@ -373,7 +401,9 @@ export default function AdminAppeals({ user }: Props) {
                  style={{ '--accent': typeColor(typesFrom(a)[0]) } as CSSProperties}
                  onClick={() => openAppeal(a)}>
               <div className="draft-info">
-                <strong><Icon name="user" size={16} /> {a.user_email}</strong>
+                <strong><Icon name="user" size={16} /> {a.user_email}
+                  {a.appeal_type === 'unreceived' && <span className="badge badge-gold" style={{ marginLeft: 6 }}>未到账申诉</span>}
+                </strong>
                 <span className="draft-meta"><Icon name="archive" size={13} /> {a.submission_zip} · {a.reason} · {a.created_at.slice(0, 19).replace('T', ' ')}</span>
               </div>
               <div className="submission-type-col"><TypeBadges types={typesFrom(a)} /></div>
@@ -396,6 +426,7 @@ export default function AdminAppeals({ user }: Props) {
                 <h3 className="modal-title" style={{ fontSize: 16 }}>处理意见：{selected.submission_zip}</h3>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <TypeBadges types={types} />
+                  {selected.appeal_type === 'unreceived' ? <span className="badge badge-gold">未到账申诉</span> : <span className="badge badge-info">打回申诉</span>}
                   {appealStatusBadge(selected.status)}
                   {selected.status !== 'pending' && selected.admin_email && <span className="draft-meta">处理人：{selected.admin_email}</span>}
                 </div>
@@ -419,6 +450,11 @@ export default function AdminAppeals({ user }: Props) {
                       <strong>{selected.user_email}</strong>
                       <span className="draft-meta">提交时间：{selected.created_at.slice(0, 19).replace('T', ' ')}</span>
                       <p style={{ marginTop: 6, whiteSpace: 'pre-line' }}>{selected.reason}</p>
+                      {selected.proof_url && (
+                        <div style={{ marginTop: 8 }}>
+                          <a href={selected.proof_url} target="_blank" rel="noreferrer" className="file-link"><Icon name="image" size={14} /> 打款证明截图</a>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {/* 审核员/管理员批注（申诉待处理时最新批注即审核员打回意见） */}
@@ -434,18 +470,51 @@ export default function AdminAppeals({ user }: Props) {
                       <span className="draft-meta">批注人：{review.reviewer_email} · 状态：{review.status === 'approved' ? '已通过' : '已打回'}</span>
                     </div>
                   )}
+                  {/* 打款证明上传（仅未到账申诉、待处理时显示；驳回申诉时提供依据） */}
+                  {canResolve && selected.appeal_type === 'unreceived' && (
+                    <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+                      <h4 className="section-title"><Icon name="image" size={16} /> 打款证明（驳回申诉时可提供）</h4>
+                      <p className="card-sub" style={{ marginBottom: 8 }}>确认已到账、驳回申诉时，可上传打款截图作为依据（可选，可重新上传覆盖）</p>
+                      {proofFile ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <img src={proofFile.url} alt="打款证明" style={{ width: 96, height: 72, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--gray-300)' }} />
+                          <div>
+                            <div className="file-chip"><Icon name="image" size={14} /> {proofFile.filename}</div>
+                            <label className="btn btn-ghost btn-sm" style={{ marginTop: 6, cursor: 'pointer', display: 'inline-flex' }}>
+                              <Icon name="refresh" size={13} /> 重新上传
+                              <input type="file" accept=".png,.jpg,.jpeg" hidden onChange={handleUploadProof} />
+                            </label>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
+                          {proofUploading ? <><span className="spinner" /> 上传中...</> : <><Icon name="upload-cloud" size={14} /> 上传截图</>}
+                          <input type="file" accept=".png,.jpg,.jpeg" hidden onChange={handleUploadProof} />
+                        </label>
+                      )}
+                    </div>
+                  )}
                   {view === 'list' ? renderList() : renderDetail()}
                 </>
               )}
             </div>
 
-            {/* 底部操作栏（仅待处理申诉显示） */}
+            {/* 底部操作栏（仅待处理申诉显示；未到账申诉为核实打款的两个动作） */}
             {canResolve && (
               <div className="modal-foot">
                 <span />
                 <div style={{ display: 'flex', gap: 12 }}>
-                  <button className="btn btn-success" onClick={() => handleResolve('approve')} disabled={actionLoading}><Icon name="check" size={15} /> 通过报销</button>
-                  <button className="btn btn-danger" onClick={() => handleResolve('reject')} disabled={actionLoading}><Icon name="rotate-ccw" size={15} /> 打回报销</button>
+                  {selected.appeal_type === 'unreceived' ? (
+                    <>
+                      <button className="btn btn-success" onClick={() => handleResolve('reject')} disabled={actionLoading}><Icon name="check" size={15} /> 确认已到账，驳回申诉</button>
+                      <button className="btn btn-gold" onClick={() => handleResolve('approve')} disabled={actionLoading}><Icon name="refresh" size={15} /> 确认未到账，重新处理</button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn btn-success" onClick={() => handleResolve('approve')} disabled={actionLoading}><Icon name="check" size={15} /> 通过报销</button>
+                      <button className="btn btn-danger" onClick={() => handleResolve('reject')} disabled={actionLoading}><Icon name="rotate-ccw" size={15} /> 打回报销</button>
+                    </>
+                  )}
                 </div>
               </div>
             )}

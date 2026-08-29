@@ -234,7 +234,7 @@ def init_db():
                 END $$;
             """)
 
-            # ---- 意见反馈（申诉）表：成员对打回结果不认可时提交，管理员裁决 ----
+            # ---- 意见反馈（申诉）表：成员对打回结果不认可/已报销未到账时提交，管理员裁决 ----
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS appeals (
                     id             SERIAL PRIMARY KEY,
@@ -244,9 +244,25 @@ def init_db():
                     reason         TEXT DEFAULT '',
                     status         VARCHAR(20) DEFAULT 'pending',
                     admin_email    VARCHAR(255) DEFAULT '',
+                    appeal_type    VARCHAR(20) DEFAULT 'rejected',
+                    proof_filename VARCHAR(500) DEFAULT '',
                     created_at     TIMESTAMP DEFAULT NOW(),
                     updated_at     TIMESTAMP DEFAULT NOW()
                 );
+            """)
+            # 兼容旧表：申诉类型（rejected 打回申诉 / unreceived 已报销未到账申诉）
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE appeals ADD COLUMN appeal_type VARCHAR(20) DEFAULT 'rejected';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
+            # 兼容旧表：打款证明截图文件名（未到账申诉驳回时管理员上传）
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE appeals ADD COLUMN proof_filename VARCHAR(500) DEFAULT '';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
             """)
 
             # 4. 同名 ZIP 去重（UNIQUE 索引前）：保留 id 最大者，其余改名墓碑（幂等）

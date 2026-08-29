@@ -158,12 +158,17 @@ def resolve_appeal(
     decision: str,
     form_comment: str,
     material_comments: dict | None = None,
+    proof_filename: str = "",
 ) -> dict:
-    """管理员处理意见反馈：直接决定报销最终结果（approve=通过 / reject=打回）。
+    """管理员处理意见反馈，按申诉类型分支：
+    - 打回申诉（appeal_type='rejected'）：直接决定报销最终结果（approve=通过 / reject=打回）；
+    - 未到账申诉（appeal_type='unreceived'）：approve=确认未到账（报销进度回到"报销流程中"，
+      重新打款）；reject=确认已到账（驳回申诉，报销状态不动，可附打款证明截图）。
 
-    批注行 status 直接写最终结果并以 is_admin=TRUE 标记（不能写伪状态，
-    否则启动迁移会把 submissions.status 收敛成未知值）。若成员在申诉后
-    已重新提交，沿 parent_id 链把决定落到最新版本，成员端才能看到结果。
+    打回申诉批注行 status 直接写最终结果并以 is_admin=TRUE 标记（不能写伪状态，
+    否则启动迁移会把 submissions.status 收敛成未知值）。未到账申诉的申请本身始终
+    approved，批注统一写 approved，避免收敛把状态改成 rejected。
+    若成员在申诉后已重新提交，沿 parent_id 链把决定落到最新版本，成员端才能看到结果。
     """
     if decision not in ("approve", "reject"):
         return {"success": False, "error": "无效的处理决定"}
@@ -171,33 +176,43 @@ def resolve_appeal(
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, submission_id, submission_zip, status FROM appeals WHERE id = %s",
+                "SELECT id, submission_id, submission_zip, status, appeal_type FROM appeals WHERE id = %s",
                 (appeal_id,),
             )
             row = cur.fetchone()
             if not row:
                 return {"success": False, "error": "申诉不存在"}
-            aid, submission_id, submission_zip, appeal_status = row
+            aid, submission_id, submission_zip, appeal_status, appeal_type = row
             if appeal_status != "pending":
                 return {"success": False, "error": "该申诉已处理"}
 
-            sub_status = "approved" if decision == "approve" else "rejected"
-            target_id, target_zip = submission_id, submission_zip
-            # 成员可能已重新提交：沿 parent_id 链找最新后代行，决定落到成员可见的版本
-            if submission_id is not None:
-                cur.execute("""
-                    WITH RECURSIVE chain AS (
-                        SELECT id, zip_filename FROM submissions WHERE id = %s
-                        UNION ALL
-                        SELECT s.id, s.zip_filename FROM submissions s JOIN chain c ON s.parent_id = c.id
+            if appeal_type == "unreceived":
+                # 未到账申诉：申请保持已通过，只处理打款进度（已通过的申请不会重传，不走 parent 链）
+                if decision == "approve" and submission_id is not None:
+                    cur.execute(
+                        "UPDATE submissions SET reimburse_progress = 'in_process', updated_at = NOW() WHERE id = %s",
+                        (submission_id,),
                     )
-                    SELECT id, zip_filename FROM chain c
-                    WHERE NOT EXISTS (SELECT 1 FROM submissions s WHERE s.parent_id = c.id)
-                    ORDER BY id DESC LIMIT 1
-                """, (submission_id,))
-                top = cur.fetchone()
-                if top:
-                    target_id, target_zip = top
+                sub_status = "approved"  # 批注统一写 approved（申请本身已通过）
+                target_id, target_zip = submission_id, submission_zip
+            else:
+                sub_status = "approved" if decision == "approve" else "rejected"
+                target_id, target_zip = submission_id, submission_zip
+                # 成员可能已重新提交：沿 parent_id 链找最新后代行，决定落到成员可见的版本
+                if submission_id is not None:
+                    cur.execute("""
+                        WITH RECURSIVE chain AS (
+                            SELECT id, zip_filename FROM submissions WHERE id = %s
+                            UNION ALL
+                            SELECT s.id, s.zip_filename FROM submissions s JOIN chain c ON s.parent_id = c.id
+                        )
+                        SELECT id, zip_filename FROM chain c
+                        WHERE NOT EXISTS (SELECT 1 FROM submissions s WHERE s.parent_id = c.id)
+                        ORDER BY id DESC LIMIT 1
+                    """, (submission_id,))
+                    top = cur.fetchone()
+                    if top:
+                        target_id, target_zip = top
 
             cur.execute(
                 """INSERT INTO review_annotations
@@ -208,14 +223,14 @@ def resolve_appeal(
                  json.dumps(material_comments or {}, ensure_ascii=False)),
             )
             rid = cur.fetchone()[0]
-            if target_id is not None:
+            if appeal_type != "unreceived" and target_id is not None:
                 cur.execute(
                     "UPDATE submissions SET status = %s, updated_at = NOW() WHERE id = %s",
                     (sub_status, target_id),
                 )
             cur.execute(
-                "UPDATE appeals SET status = %s, admin_email = %s, updated_at = NOW() WHERE id = %s",
-                (sub_status, admin_email, aid),
+                "UPDATE appeals SET status = %s, admin_email = %s, proof_filename = %s, updated_at = NOW() WHERE id = %s",
+                (sub_status, admin_email, proof_filename, aid),
             )
             conn.commit()
             return {"success": True, "id": rid, "submission_status": sub_status}

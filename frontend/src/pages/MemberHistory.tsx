@@ -75,9 +75,17 @@ export default function MemberHistory({ user }: Props) {
               <span className="draft-meta">{formatSize(s.size)} · {formatTime(s.modified)}</span>
             </div>
             <div className="submission-progress-col">
-              {s.status === 'approved' && (s.reimburse_progress === 'reimbursed'
-                ? <span className="badge badge-gold">已报销</span>
-                : <span className="badge badge-info">报销流程中</span>)}
+              {s.status === 'approved' && (s.reimburse_progress === 'reimbursed' ? (
+                <>
+                  <span className="badge badge-gold">已报销</span>
+                  <button className="btn btn-ghost btn-sm" style={{ marginTop: 6 }} title="标记已报销但未收到打款时申诉"
+                          onClick={e => { e.stopPropagation(); navigate(`/member/appeals?unreceived=${encodeURIComponent(s.filename)}`); }}>
+                    <Icon name="alert-triangle" size={13} /> 未到账？申诉
+                  </button>
+                </>
+              ) : (
+                <span className="badge badge-info">报销流程中</span>
+              ))}
             </div>
             <div className="submission-type-col"><TypeBadges types={typesFrom(s)} /></div>
             <div className="submission-right">

@@ -2,13 +2,17 @@
 意见反馈（申诉）服务。
 
 成员对打回结果不认可时提交申诉（可多选被打回的提交，共享一条原因，每条提交一行）；
+或对已标记"已报销"但未收到打款的提交提交申诉（未到账申诉，管理员核实打款情况）。
 管理员在 /admin/appeals 查看并裁决（裁决逻辑在 review_service.resolve_appeal）。
 """
 from database import get_connection
 
 
 def create_appeals(user_email: str, submission_zips: list, reason: str) -> dict:
-    """批量创建申诉：每个被选中的已打回提交一行。非法项跳过并回报。"""
+    """批量创建申诉：每个被选中的提交一行，按提交状态推断申诉类型。非法项跳过并回报。
+
+    可申诉的两类状态：rejected（打回申诉）/ approved + reimburse_progress='reimbursed'（未到账申诉）。
+    """
     if not user_email:
         return {"success": False, "error": "缺少用户邮箱"}
     if not reason or not reason.strip():
@@ -21,16 +25,20 @@ def create_appeals(user_email: str, submission_zips: list, reason: str) -> dict:
         with conn.cursor() as cur:
             for zip_name in submission_zips:
                 cur.execute(
-                    "SELECT id, status FROM submissions WHERE zip_filename = %s AND user_email = %s",
+                    "SELECT id, status, reimburse_progress FROM submissions WHERE zip_filename = %s AND user_email = %s",
                     (zip_name, user_email),
                 )
                 row = cur.fetchone()
                 if not row:
                     skipped.append({"zip": zip_name, "reason": "提交不存在"})
                     continue
-                sub_id, status = row
-                if status != "rejected":
-                    skipped.append({"zip": zip_name, "reason": "当前状态不可反馈"})
+                sub_id, status, progress = row
+                if status == "rejected":
+                    appeal_type = "rejected"
+                elif status == "approved" and progress == "reimbursed":
+                    appeal_type = "unreceived"
+                else:
+                    skipped.append({"zip": zip_name, "reason": "仅被打回或已报销未到账的申请可反馈"})
                     continue
                 cur.execute(
                     "SELECT 1 FROM appeals WHERE submission_id = %s AND status = 'pending' LIMIT 1",
@@ -40,9 +48,9 @@ def create_appeals(user_email: str, submission_zips: list, reason: str) -> dict:
                     skipped.append({"zip": zip_name, "reason": "已有待处理反馈"})
                     continue
                 cur.execute(
-                    """INSERT INTO appeals (submission_id, submission_zip, user_email, reason)
-                       VALUES (%s, %s, %s, %s) RETURNING id""",
-                    (sub_id, zip_name, user_email, reason.strip()),
+                    """INSERT INTO appeals (submission_id, submission_zip, user_email, reason, appeal_type)
+                       VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+                    (sub_id, zip_name, user_email, reason.strip(), appeal_type),
                 )
                 created.append(cur.fetchone()[0])
             conn.commit()
@@ -51,13 +59,22 @@ def create_appeals(user_email: str, submission_zips: list, reason: str) -> dict:
         conn.close()
 
 
+def _proof_url(proof_filename: str) -> str:
+    """打款证明的访问 URL（存在才返回，否则空串）。"""
+    if not proof_filename:
+        return ""
+    from urllib.parse import quote
+    return f"/api/v1/uploads/proofs/{quote(proof_filename)}"
+
+
 def list_user_appeals(user_email: str) -> list[dict]:
     """列出成员自己的申诉记录。"""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT a.id, a.submission_zip, a.status, a.reason, a.created_at, s.reimb_type, s.reimb_types
+                SELECT a.id, a.submission_zip, a.status, a.reason, a.created_at, s.reimb_type, s.reimb_types,
+                       a.appeal_type, a.proof_filename
                 FROM appeals a
                 LEFT JOIN submissions s ON s.id = a.submission_id
                 WHERE a.user_email = %s
@@ -72,6 +89,8 @@ def list_user_appeals(user_email: str) -> list[dict]:
                     "created_at": r[4].isoformat() if r[4] else "",
                     "reimb_type": r[5] or "vat",
                     "reimb_types": r[6] if isinstance(r[6], list) and r[6] else [r[5] or "vat"],
+                    "appeal_type": r[7] or "rejected",
+                    "proof_url": _proof_url(r[8] or ""),
                 }
                 for r in cur.fetchall()
             ]
@@ -86,7 +105,8 @@ def list_all_appeals() -> list[dict]:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT a.id, a.submission_id, a.submission_zip, a.user_email, a.reason, a.status,
-                       a.admin_email, a.created_at, s.reimb_type, s.reimb_types, s.status AS submission_status
+                       a.admin_email, a.created_at, s.reimb_type, s.reimb_types, s.status AS submission_status,
+                       a.appeal_type, a.proof_filename, s.reimburse_progress
                 FROM appeals a
                 LEFT JOIN submissions s ON s.id = a.submission_id
                 ORDER BY (a.status = 'pending') DESC, a.created_at DESC, a.id DESC
@@ -104,6 +124,9 @@ def list_all_appeals() -> list[dict]:
                     "reimb_type": r[8] or "vat",
                     "reimb_types": r[9] if isinstance(r[9], list) and r[9] else [r[8] or "vat"],
                     "submission_status": r[10] or "pending",
+                    "appeal_type": r[11] or "rejected",
+                    "proof_url": _proof_url(r[12] or ""),
+                    "reimburse_progress": r[13] or "in_process",
                 }
                 for r in cur.fetchall()
             ]

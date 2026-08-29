@@ -13,6 +13,7 @@ import tempfile
 import uuid
 from datetime import datetime
 from typing import Optional
+from urllib.parse import quote
 
 import psycopg2
 
@@ -753,7 +754,8 @@ async def api_list_all_appeals():
 
 @app.post("/api/v1/admin/appeals/{appeal_id}/resolve")
 async def api_resolve_appeal(appeal_id: int, data: dict):
-    """管理员处理申诉：直接决定最终结果（approve=通过 / reject=打回）。"""
+    """管理员处理申诉：打回申诉直接决定最终结果（approve=通过 / reject=打回）；
+    未到账申诉 approve=确认未到账（重新打款）/ reject=确认已到账（驳回，可附打款证明）。"""
     from review_service import resolve_appeal
     result = resolve_appeal(
         appeal_id,
@@ -761,10 +763,34 @@ async def api_resolve_appeal(appeal_id: int, data: dict):
         data.get("decision", ""),
         data.get("form_comment", ""),
         data.get("material_comments", {}),
+        data.get("proof_filename", ""),
     )
     if not result.get("success"):
         raise HTTPException(400, result.get("error", "操作失败"))
     return result
+
+
+@app.post("/api/v1/admin/appeals/{appeal_id}/proof")
+async def api_upload_appeal_proof(appeal_id: int, proof_file: UploadFile = File(...)):
+    """管理员上传打款证明截图（驳回未到账申诉时提供依据；保存至 UPLOADS_DIR/proofs/，
+    文件名随申诉记录，resolve 时提交 proof_filename）。"""
+    from database import get_connection as _get_conn
+    _conn = _get_conn()
+    try:
+        with _conn.cursor() as _cur:
+            _cur.execute("SELECT 1 FROM appeals WHERE id = %s", (appeal_id,))
+            if not _cur.fetchone():
+                raise HTTPException(400, "申诉不存在")
+    finally:
+        _conn.close()
+    content = _validate_file(proof_file, {
+        "label": "打款证明",
+        "accept_exts": [".png", ".jpg", ".jpeg"],
+        "max_size_mb": 5,
+    })
+    filepath = _save_upload(content, proof_file.filename or "proof.png", "proofs")
+    filename = os.path.basename(filepath)
+    return {"success": True, "proof_filename": filename, "proof_url": f"/api/v1/uploads/proofs/{quote(filename)}"}
 
 
 # ---- 草稿 API ----
@@ -905,14 +931,18 @@ async def api_list_submissions(user_email: str = ""):
         with _conn.cursor() as _cur:
             if user_email:
                 _cur.execute(
-                    "SELECT id, parent_id, zip_filename, org_name, activity_name, reimb_type, reimb_types, status, reimburse_progress, created_at FROM submissions "
+                    "SELECT id, parent_id, zip_filename, org_name, activity_name, reimb_type, reimb_types, status, reimburse_progress, created_at, "
+                    "form_data->'form'->>'finance_officer' AS finance_officer, "
+                    "form_data->'form'->>'alipay_account' AS alipay_account, "
+                    "form_data->'form'->>'actual_total' AS total_amount "
+                    "FROM submissions "
                     "WHERE user_email = %s ORDER BY created_at DESC, id DESC",
                     (user_email,))
                 rows = _cur.fetchall()
                 # 已被重传取代的旧单直接跳过（成员端只显示每条申请的最新版本；
                 # DB 行/批注/ZIP 保留，审核员端仍可见）
                 parent_ids = {r[1] for r in rows if r[1] is not None}
-                for rid, parent_id, fname, org_name, activity_name, rtype, rtypes, status, progress, created_at in rows:
+                for rid, parent_id, fname, org_name, activity_name, rtype, rtypes, status, progress, created_at, finance_officer, alipay_account, total_amount in rows:
                     if rid in parent_ids:
                         continue
                     fpath = os.path.join(SUBMISSIONS_DIR, fname)
@@ -931,6 +961,9 @@ async def api_list_submissions(user_email: str = ""):
                         "reimb_types": rtypes if isinstance(rtypes, list) and rtypes else [rtype or "vat"],
                         "status": status or "pending",
                         "reimburse_progress": progress or "in_process",
+                        "finance_officer": finance_officer or "",
+                        "alipay_account": alipay_account or "",
+                        "total_amount": total_amount or "",
                         "file_missing": file_missing,
                     })
             # 无邮箱 = 返回空列表（成员端必须登录）
