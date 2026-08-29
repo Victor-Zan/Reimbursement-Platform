@@ -22,7 +22,7 @@ TEMPLATE_XLSX_PATH = os.path.join(os.path.dirname(BASE_DIR), "template.xlsx")
 SUBMISSIONS_DIR = os.path.join(BASE_DIR, "submissions")
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
 
-# ---- 发票校验 ----
+# ---- 发票校验（社联特化：其他部门/组织部署时替换为自身开票抬头与税号） ----
 EXPECTED_BUYER_NAME = "香港中文大学（深圳）"
 EXPECTED_TAX_ID = "12440300066312613F"
 
