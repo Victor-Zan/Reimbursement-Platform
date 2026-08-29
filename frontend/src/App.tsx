@@ -44,7 +44,7 @@ const emptyForm: ReimbursementFormData = {
   activity_name: '', org_name: '', activity_end_date: todayStr(),
   reimbursement_date: todayStr(),
   invoices: [], actual_total: 0,
-  finance_officer: '', activity_leader_opinion: '', alipay_account: '',
+  finance_officer: '', activity_leader_opinion: '同意', alipay_account: '',
 };
 
 /** 单种材料的向导状态：新上传文件 + 重编辑场景下的原有文件 */
@@ -194,7 +194,7 @@ export default function App() {
     if (!results.length) return;
     const sections: InvoiceSection[] = results.map(r => ({
       buyer_name: r.buyer_name, buyer_tax_id: r.buyer_tax_id, buyer_name_valid: r.buyer_name_valid, buyer_tax_id_valid: r.buyer_tax_id_valid,
-      invoice_date: r.invoice_date, invoice_total: r.invoice_total, reimbursement_amount: 0, handler: '', reimb_type: type,
+      invoice_date: r.invoice_date, invoice_total: r.invoice_total, reimbursement_amount: r.invoice_total, handler: '', reimb_type: type,
       items: r.items.length ? r.items.map(item => ({ name: item.name, unit_price: item.unit_price, quantity: item.quantity, amount: item.amount, purchase_channel: '网购', reusable: '否', source_invoice_item: true }))
         : [{ name: '', unit_price: 0, quantity: 1, amount: 0, purchase_channel: '网购', reusable: '否', source_invoice_item: false }],
     }));
@@ -268,7 +268,7 @@ export default function App() {
       <Route path="/member/history" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><MemberHistory user={auth.user} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/feedback" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><MemberFeedback user={auth.user} onReEdit={handleReEdit} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/upload" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><UploadMaterials {...wizardProps} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
-      <Route path="/member/fill" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} onAddInvoice={addInvoice} onRemoveInvoice={removeInvoice} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member/fill" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} userEmail={auth?.user?.email || ''} onAddInvoice={addInvoice} onRemoveInvoice={removeInvoice} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/review" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewSubmit formData={formData} materials={materials} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></div></> : <Navigate to="/login" />} />
       <Route path="/reviewer" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewerDashboard user={auth.user} /></div></> : <Navigate to="/login" />} />
       <Route path="/reviewer/materials" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewMaterials user={auth.user} /></div></> : <Navigate to="/login" />} />

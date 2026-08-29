@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import DetailTable from '../components/DetailTable';
 import StepIndicator from '../components/StepIndicator';
 import { ReimbursementFormData, InvoiceSection, DetailRow, ValidationError, ReimbursementType } from '../types';
 import { SELECTABLE_TYPES, TAB_LABELS } from '../config/materials';
 import TypeBadges from '../components/TypeBadges';
+import OrgAutocomplete from '../components/OrgAutocomplete';
+import { ORGANIZATIONS } from '../config/organizations';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
+import RuleTips from '../components/RuleTips';
 
 /** 本地时区的今天（YYYY-MM-DD） */
 const todayStr = () => {
@@ -18,17 +21,30 @@ interface Props {
   formData: ReimbursementFormData; updateForm: (patch: Partial<ReimbursementFormData>) => void;
   updateInvoice: (invIndex: number, patch: Partial<InvoiceSection>) => void;
   updateInvoiceItems: (invIndex: number, items: DetailRow[]) => void;
+  userEmail: string;
   ocrResults?: any; onBack: () => void; onNext: () => void;
   onSaveDraft: () => Promise<boolean>; onHome: () => void;
   onAddInvoice: (type: ReimbursementType) => void; onRemoveInvoice: (invIndex: number) => void;
 }
 
-export default function FillForm({ formData, updateForm, updateInvoice, updateInvoiceItems, onBack, onNext, onSaveDraft, onHome, onAddInvoice, onRemoveInvoice }: Props) {
+export default function FillForm({ formData, updateForm, updateInvoice, updateInvoiceItems, userEmail, onBack, onNext, onSaveDraft, onHome, onAddInvoice, onRemoveInvoice }: Props) {
   const { toast, confirm } = useFeedback();
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addType, setAddType] = useState<ReimbursementType>(formData.types?.[0] || 'vat');
+
+  // 历史经手人候选（财务负责人字段模糊搜索）；加载失败静默降级，不阻塞表单
+  const [handlerHistory, setHandlerHistory] = useState<string[]>([]);
+  useEffect(() => {
+    if (!userEmail) return;
+    let cancelled = false;
+    fetch(`/api/v1/submissions/handlers?user_email=${encodeURIComponent(userEmail)}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setHandlerHistory((j.handlers || []).filter(Boolean)); })
+      .catch(() => { if (!cancelled) setHandlerHistory([]); });
+    return () => { cancelled = true; };
+  }, [userEmail]);
 
   const amountErrors = formData.invoices.map(inv => inv.reimbursement_amount > inv.invoice_total && inv.invoice_total > 0);
   const hasAmountError = amountErrors.some(Boolean);
@@ -75,16 +91,54 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
 
   const setField = (field: keyof ReimbursementFormData, value: string | number) => updateForm({ [field]: value });
 
+  // 手动票据填发票总额：报销金额默认跟随（保持最大值），除非用户已改为其他值
+  const handleInvoiceTotal = (invIdx: number, raw: string) => {
+    const v = parseFloat(raw) || 0;
+    const inv = formData.invoices[invIdx];
+    const nextAmount = (inv.reimbursement_amount === 0 || inv.reimbursement_amount === inv.invoice_total) ? v : inv.reimbursement_amount;
+    updateInvoice(invIdx, { invoice_total: v, reimbursement_amount: nextAmount });
+  };
+
   return (
     <>
       <StepIndicator current={2} />
+
+      {/* 填写规则提示（默认收起，点开可查阅） */}
+      <RuleTips
+        title="填写报销表规则"
+        items={[
+          {
+            text: <>金额三条逻辑：<strong>单价 = 税前价格</strong>；<strong>发票总额 = 税后总额</strong>（OCR 自动填入）；<strong>报销金额 ≤ 发票总额</strong>（超出会被拦截）</>,
+          },
+          {
+            text: <>活动时间 = 活动的<strong>最后一天</strong>；报销时间 = <strong>提交报销材料的当天</strong></>,
+          },
+          {
+            tone: 'warn',
+            text: <>明细一行 = <strong>一张发票上的一个条目</strong>；一张发票有多个条目需逐行列出；实物材料中发票需按报销表物品名称顺序排列</>,
+          },
+          {
+            text: <>购买途径选「<strong>网购</strong>」或「<strong>实体店</strong>」；是否可重复利用选「是 / 否」</>,
+          },
+          {
+            text: <>经手人 = 该发票对应物品的<strong>实际购买者</strong>（每张发票可不同，财务负责人 ≠ 经手人）</>,
+          },
+          {
+            text: <>财务负责人（经办人）= <strong>完整报销单的负责人</strong>、支付宝账号所有者；支付宝账号 = <strong>实名认证后的财务负责人账号</strong>（11 位手机号或邮箱）</>,
+          },
+          {
+            tone: 'warn',
+            text: <>单项报销超 <strong>2000 元</strong>需附付款截图；单品尽量≤<strong>1000 元</strong>（数量叠加超 1000 无碍）；总额超 <strong>1 万元</strong>请提前联系 OSA 老师</>,
+          },
+        ]}
+      />
 
       {/* 活动信息 */}
       <div className="card">
         <h2 className="card-title">活动信息</h2>
         <div className="form-row">
           <div className="form-group"><label className="form-label">活动名称 <span className="required">*</span></label><input className="form-input" value={formData.activity_name} onChange={e => setField('activity_name', e.target.value)} placeholder="输入活动名称" /></div>
-          <div className="form-group"><label className="form-label">学生组织名称 <span className="required">*</span></label><input className="form-input" value={formData.org_name} onChange={e => setField('org_name', e.target.value)} placeholder="输入学生组织名称" /></div>
+          <div className="form-group"><label className="form-label">学生组织名称 <span className="required">*</span></label><OrgAutocomplete value={formData.org_name} onChange={v => setField('org_name', v)} orgs={ORGANIZATIONS} placeholder="输入或从名单中选择" /></div>
         </div>
         <div className="form-row">
           <div className="form-group"><label className="form-label">活动时间（活动最后一天）<span className="required">*</span></label><input type="date" className="form-input" max={todayStr()} value={formData.activity_end_date} onChange={e => setField('activity_end_date', e.target.value)} /></div>
@@ -120,7 +174,7 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
               </div>
               <div className="form-group">
                 <label className="form-label">发票总额 <span className="required">*</span></label>
-                <input type="number" step="0.01" className="form-input" value={invoice.invoice_total || ''} onChange={e => updateInvoice(invIdx, { invoice_total: parseFloat(e.target.value) || 0 })} placeholder="填写发票/票据总额" />
+                <input type="number" step="0.01" className="form-input" value={invoice.invoice_total || ''} onChange={e => handleInvoiceTotal(invIdx, e.target.value)} placeholder="填写发票/票据总额" />
               </div>
             </div>
           )}
@@ -138,6 +192,7 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
               <label className="form-label">报销金额（≤¥{invoice.invoice_total.toFixed(2)}）<span className="required">*</span></label>
               <input type="number" step="0.01" className={`form-input ${amountErrors[invIdx] ? 'error' : ''}`}
                 value={invoice.reimbursement_amount || ''}
+                onWheel={e => e.currentTarget.blur()}   // 禁用滚轮改数，只允许手动输入
                 onChange={e => updateInvoice(invIdx, { reimbursement_amount: parseFloat(e.target.value) || 0 })} />
               {amountErrors[invIdx] && <div className="form-error">报销金额不能超过该发票总额 ¥{invoice.invoice_total.toFixed(2)}</div>}
             </div>
@@ -166,7 +221,7 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
       <div className="card">
         <h2 className="card-title">其他信息</h2>
         <div className="form-row">
-          <div className="form-group"><label className="form-label">经办人/财务负责人 <span className="required">*</span></label><input className="form-input" value={formData.finance_officer} onChange={e => setField('finance_officer', e.target.value)} placeholder="填写经办人姓名" /></div>
+          <div className="form-group"><label className="form-label">经办人/财务负责人 <span className="required">*</span></label><OrgAutocomplete value={formData.finance_officer} onChange={v => setField('finance_officer', v)} orgs={handlerHistory.map(h => ({ name: h }))} placeholder="输入或从历史经手人中选择" emptyText="暂无历史经手人，可直接输入" /></div>
           <div className="form-group"><label className="form-label">活动负责人意见</label><input className="form-input" value={formData.activity_leader_opinion} onChange={e => setField('activity_leader_opinion', e.target.value)} placeholder="如：同意报销" /></div>
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>

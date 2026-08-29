@@ -938,6 +938,36 @@ async def api_list_submissions(user_email: str = ""):
     return {"success": True, "submissions": files}
 
 
+@app.get("/api/v1/submissions/handlers")
+async def api_list_handlers(user_email: str = ""):
+    """列出该成员历史提交中曾用过的经手人（去重）。空邮箱返回空列表。"""
+    from database import get_connection as _get_conn
+    _conn = _get_conn()
+    handlers = []
+    try:
+        with _conn.cursor() as _cur:
+            if user_email:
+                # jsonb_typeof 防护必须写在 CASE WHEN 内（隐式 LATERAL 使 FROM 先于 WHERE 求值，
+                # 放 WHERE 无法阻止 jsonb_array_elements 对非数组标量抛错）；
+                # 缺失键/JSON null 时 jsonb_typeof 返回 NULL → 走 ELSE 分支，覆盖旧数据
+                _cur.execute(
+                    "SELECT DISTINCT trim(h.value->>'handler') AS handler "
+                    "FROM submissions, "
+                    "jsonb_array_elements("
+                    "  CASE WHEN jsonb_typeof(form_data->'form'->'invoices') = 'array' "
+                    "       THEN form_data->'form'->'invoices' ELSE '[]'::jsonb END"
+                    ") AS h(value) "
+                    "WHERE user_email = %s "
+                    "  AND h.value->>'handler' IS NOT NULL "
+                    "  AND trim(h.value->>'handler') <> '' "
+                    "ORDER BY handler",
+                    (user_email,))
+                handlers = [r[0] for r in _cur.fetchall()]
+    finally:
+        _conn.close()
+    return {"success": True, "handlers": handlers}
+
+
 @app.get("/api/v1/submissions/download/{filename}")
 async def api_download_submission(filename: str):
     """下载指定的 ZIP 文件。"""

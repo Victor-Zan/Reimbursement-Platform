@@ -6,6 +6,7 @@ interface Props {
   onChange: (v: string) => void;
   orgs: OrgInfo[];
   placeholder?: string;
+  emptyText?: string;
 }
 
 /**
@@ -14,7 +15,7 @@ interface Props {
  * 也支持自由输入（不在名单时按模糊匹配过滤）。
  * 防坑：候选行 onMouseDown preventDefault 阻止 input 先失焦，避免"点击候选失效"。
  */
-export default function OrgAutocomplete({ value, onChange, orgs, placeholder }: Props) {
+export default function OrgAutocomplete({ value, onChange, orgs, placeholder, emptyText }: Props) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
 
@@ -48,7 +49,7 @@ export default function OrgAutocomplete({ value, onChange, orgs, placeholder }: 
       {open && (
         <div className="org-dropdown" onMouseDown={e => e.preventDefault()}>
           {matches.length === 0 ? (
-            <div className="org-dropdown-empty">未在名单中，仍按模糊匹配过滤</div>
+            <div className="org-dropdown-empty">{emptyText ?? '未在名单中，仍按模糊匹配过滤'}</div>
           ) : matches.map((o, i) => (
             <div
               key={o.name}
