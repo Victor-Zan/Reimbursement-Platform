@@ -8,6 +8,7 @@ import { emptyMaterialEntry } from '../App';
 import TypeBadges from '../components/TypeBadges';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
+import RuleTips from '../components/RuleTips';
 
 interface Props {
   formData: ReimbursementFormData;
@@ -159,6 +160,7 @@ export default function ReviewSubmit({
               存档文件：{submitResult.zip_filename}
             </p>
           )}
+          <p className="success-panel-remind"><Icon name="alert-triangle" size={14} /> 请记得在社联坐班期间携带纸质材料（报销表 + 按序发票 + 活动凭证）提交至社联行政。</p>
           <button className="btn btn-primary" onClick={onReset}>
             发起新的报销申请
           </button>
@@ -268,6 +270,30 @@ export default function ReviewSubmit({
               }))}
             </div>
           </div>
+
+          {/* 线下交付提醒（默认收起，点开可查阅） */}
+          <RuleTips
+            title="提交后别忘了（线下交付）"
+            items={[
+              {
+                text: <>核对发票按报销表物品顺序排列、与上传材料一致</>,
+              },
+              {
+                text: <>电子发票提交时系统会<strong>自动拼接</strong>报销信息（社团 / 活动 / 物品 / 金额）；<strong>纸质发票请自行在空白处手写标注</strong></>,
+              },
+              {
+                tone: 'warn',
+                text: <>需在<strong>社联坐班期间</strong>到社联行政提交纸质材料，顺序：<strong>报销表 → 按序发票 → 活动凭证</strong>（1-2 张海报 / 推送 / 邮件截图）</>,
+              },
+              {
+                tone: 'warn',
+                text: <>纸质发票粘贴：<strong>单独一张 A4 纸居中</strong>，用固体胶 / 胶水；禁用双面胶、胶带或订书机</>,
+              },
+              {
+                text: <>提交纸质材料前将<strong>台账发送至社联邮箱</strong>；预付卡（如星巴克预付卡）不可报销；报销按预算案复核</>,
+              },
+            ]}
+          />
 
           {submitError && (
             <div className="alert alert-error"><Icon name="alert-triangle" size={15} /> {submitError}</div>

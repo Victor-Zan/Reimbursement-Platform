@@ -7,6 +7,7 @@ import type { TypeMaterialsState, MaterialEntry } from '../App';
 import { emptyMaterialEntry } from '../App';
 import Icon from '../components/Icon';
 import { useFeedback } from '../components/Feedback';
+import RuleTips, { RuleTipItem } from '../components/RuleTips';
 
 interface Props {
   materials: TypeMaterialsState;
@@ -115,6 +116,32 @@ export default function UploadMaterials({
   const activeOCR = ocrResults[activeType] || [];
   const ocrError = ocrErrors[activeType] || '';
 
+  // 提交规则提示：与《报销人提交规则提示.md》同步，按当前类型显示特例
+  const ruleItems: RuleTipItem[] = [
+    {
+      text: activeType === 'travel'
+        ? <>交通票据需为<strong>正规票据</strong>，小票、收据不可报销</>
+        : <>发票必须是<strong>增值税普通发票</strong>，小票、收据不可报销</>,
+    },
+    {
+      tone: 'warn',
+      text: <>开票名称「香港中文大学（深圳）」勿漏"深圳"、税号 <strong>12440300066312613F</strong> 勿漏大写 F——OCR 会自动核对名称与税号，<strong>销售方盖章请自行确认</strong></>,
+    },
+    ...(activeType === 'travel' ? [{
+      text: <>打车票据需备注"出发地-目的地 + 日期"，尽量使用滴滴；船票 / 高铁票保留票根原件，复印件备注起止地与日期一并提交；大巴 / 中巴 / 商务车需提前联系 OSA 老师预订</>,
+    }] : []),
+    ...(activeType === 'insurance' ? [{
+      text: <>保险报销需同时上传<strong>发票与保险单原单</strong>，两者缺一不可</>,
+    }] : []),
+    {
+      tone: 'warn',
+      text: <>单项报销超 <strong>2000 元</strong>需附付款截图（可随活动凭证上传或线下附上）；单品尽量≤<strong>1000 元</strong>（数量叠加超 1000 无碍）；总额超 <strong>1 万元</strong>请提前联系 OSA 老师</>,
+    },
+    {
+      text: <>活动凭证需 1-2 张活动现场照片（海报 / 推送 / 邮件截图亦可）</>,
+    },
+  ];
+
   return (
     <>
       <StepIndicator current={1} />
@@ -139,6 +166,9 @@ export default function UploadMaterials({
           </button>
         ))}
       </div>
+
+      {/* 提交规则提示（首次进入默认展开，切换类型特例随之变化） */}
+      <RuleTips title="提交规则提示" defaultOpen items={ruleItems} />
 
       {TYPE_MATERIALS[activeType].map(key => {
         const cfg = materialFor(activeType, key);
