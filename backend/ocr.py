@@ -9,6 +9,8 @@ OCR引擎模块 —— 抽象接口 + 可插拔实现。
 import base64
 import io
 import re
+import threading
+import time
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -277,6 +279,43 @@ class PDFInvoiceEngine(BaseOCREngine):
 
 
 # ============================================================
+# 百度 OCR 调用限流器
+# ============================================================
+
+class BaiduRateLimiter:
+    """百度 OCR 调用限流：串行化 + 最小间隔，防止触发百度错误码 18（QPS 超限）。
+
+    免费额度 2 QPS → 相邻调用间隔至少 0.51s：
+    任意 1 秒窗口内严格最多 2 个请求（两跳 1.02s > 1s，留防抖动余量），
+    吞吐约 1.96 QPS，几乎吃满额度；
+    排队总等待超过 5s 则放弃，返回失败。
+    """
+
+    MIN_INTERVAL = 0.51  # 秒
+    MAX_WAIT = 5.0       # 秒，队列最长等待
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._last_call = 0.0
+
+    def acquire(self) -> bool:
+        """阻塞直到允许发起一次百度调用；排队超时返回 False。"""
+        deadline = time.monotonic() + self.MAX_WAIT
+        with self._lock:
+            while True:
+                wait = self._last_call + self.MIN_INTERVAL - time.monotonic()
+                if wait <= 0:
+                    self._last_call = time.monotonic()
+                    return True
+                if time.monotonic() + wait > deadline:
+                    return False
+                time.sleep(wait)
+
+
+_BAIDU_RATE_LIMITER = BaiduRateLimiter()  # 模块级单例：跨引擎实例共享
+
+
+# ============================================================
 # 百度 OCR 引擎
 # ============================================================
 
@@ -301,6 +340,9 @@ class BaiduOCREngine(BaseOCREngine):
         return self._access_token
 
     def recognize_invoice(self, image_bytes: bytes, filename: str = "") -> OCRResult:
+        if not _BAIDU_RATE_LIMITER.acquire():
+            return OCRResult(errors=["系统繁忙，OCR 排队超时，请稍后重试"])
+
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
         is_pdf = filename.lower().endswith(".pdf")
         param_key = "pdf_file" if is_pdf else "image"

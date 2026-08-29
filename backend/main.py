@@ -17,6 +17,7 @@ from typing import Optional
 import psycopg2
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 # request.form() 解析出的上传文件是 starlette 的 UploadFile（fastapi.UploadFile 是其子类，
@@ -148,7 +149,7 @@ async def ocr_invoice(file: UploadFile = File(...)):
     engine = get_ocr_engine()
 
     try:
-        result = engine.recognize_invoice(content, file.filename or "")
+        result = await run_in_threadpool(engine.recognize_invoice, content, file.filename or "")
     except Exception as e:
         raise HTTPException(500, f"OCR识别失败: {str(e)}")
 
@@ -180,7 +181,7 @@ async def ocr_invoices(files: list[UploadFile] = File(...)):
     for file in files:
         content = await file.read()
         try:
-            result = engine.recognize_invoice(content, file.filename or "")
+            result = await run_in_threadpool(engine.recognize_invoice, content, file.filename or "")
         except Exception as e:
             results.append({
                 "filename": file.filename,
