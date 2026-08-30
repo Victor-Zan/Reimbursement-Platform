@@ -51,13 +51,15 @@ export interface InvoiceSection {
   items: DetailRow[];
   /** 发票所属报销类型（多类型报销时用于分类与校验） */
   reimb_type: ReimbursementType;
+  /** 是否公对公转账（报销人标注，默认否，显示在审核端发票信息页） */
+  is_public_transfer: boolean;
 }
 
 /** 报销类型 */
-export type ReimbursementType = 'vat' | 'insurance' | 'travel' | 'bulk';
+export type ReimbursementType = 'vat' | 'insurance' | 'travel' | 'bulk' | 'large';
 
 /** 材料 key（与后端 reimbursement_types.py 的 MATERIALS 一致） */
-export type MaterialKey = 'invoices' | 'evidence' | 'policy' | 'rider_ids' | 'itinerary' | 'payments';
+export type MaterialKey = 'invoices' | 'evidence' | 'policy' | 'rider_ids' | 'itinerary' | 'payments' | 'supplier_detail' | 'payments_voucher';
 
 /** 完整报销表单数据 */
 export interface ReimbursementFormData {

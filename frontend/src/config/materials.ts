@@ -46,14 +46,18 @@ export const TYPE_CONFIGS: Record<ReimbursementType, TypeConfig> = {
     key: 'bulk', label: '大量发票报销', color: '#A16207', icon: 'receipt',
     description: '适用于发票数量多的活动报销，最多支持 30 张发票',
   },
+  large: {
+    key: 'large', label: '大额报销', color: '#BE123C', icon: 'coins',
+    description: '适用于单项报销 ≥1000 元的报销，需上传发票、供应商明细表单与支付凭证',
+  },
 };
 
-/** 报销申请中可选的三类（大量发票已并入普通增值税，仅历史数据保留展示） */
-export const SELECTABLE_TYPES: ReimbursementType[] = ['vat', 'insurance', 'travel'];
+/** 报销申请中可选的类型（大量发票已并入普通增值税，仅历史数据保留展示） */
+export const SELECTABLE_TYPES: ReimbursementType[] = ['vat', 'insurance', 'travel', 'large'];
 
 /** step1 标签页显示名 */
 export const TAB_LABELS: Record<ReimbursementType, string> = {
-  vat: '普通增值税', insurance: '保险', travel: '出行', bulk: '大量发票',
+  vat: '普通增值税', insurance: '保险', travel: '出行', bulk: '大量发票', large: '大额',
 };
 
 export const MATERIALS: Record<MaterialKey, MaterialConfig> = {
@@ -93,6 +97,18 @@ export const MATERIALS: Record<MaterialKey, MaterialConfig> = {
     minCount: 1, maxCount: 20, useOCR: false,
     quickComments: ['支付记录不清晰', '支付记录与金额不符'],
   },
+  supplier_detail: {
+    key: 'supplier_detail', label: '供应商明细表单', icon: 'file-text',
+    hint: '上传供应商提供的明细表单（PDF 或图片），列明设备/服化道租借项目、数量与金额', accept: '.pdf,.png,.jpg,.jpeg',
+    minCount: 1, maxCount: 20, useOCR: false,
+    quickComments: ['供应商明细表单缺失', '明细表单信息不完整', '明细与发票金额不符'],
+  },
+  payments_voucher: {
+    key: 'payments_voucher', label: '支付凭证', icon: 'credit-card',
+    hint: '上传向供应商付款的凭证截图', accept: '.png,.jpg,.jpeg',
+    minCount: 1, maxCount: 20, useOCR: false,
+    quickComments: ['支付凭证不清晰', '支付凭证与金额不符', '缺少支付凭证'],
+  },
 };
 
 /** 每种报销类型需要的材料（顺序即上传/预览/审核展示顺序） */
@@ -101,6 +117,7 @@ export const TYPE_MATERIALS: Record<ReimbursementType, MaterialKey[]> = {
   insurance: ['invoices', 'policy'],
   travel: ['invoices', 'rider_ids', 'itinerary', 'payments'],
   bulk: ['invoices', 'evidence'],
+  large: ['invoices', 'supplier_detail', 'payments_voucher'],
 };
 
 /** 类型级覆盖（默认继承 MATERIALS，与后端 TYPE_OVERRIDES 一致） */

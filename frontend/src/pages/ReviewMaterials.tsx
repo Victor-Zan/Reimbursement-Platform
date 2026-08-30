@@ -16,7 +16,7 @@ interface PreviewFile { name: string; data_url: string; }
 /** 发票明细行（报销表项目） */
 interface InvoiceItem { name: string; unit_price: number; quantity: number; }
 /** 单张发票的报销表项目备注（与发票文件同序配对） */
-interface InvoiceDetail { invoice_total: number; reimbursement_amount: number; items: InvoiceItem[]; }
+interface InvoiceDetail { invoice_total: number; reimbursement_amount: number; is_public_transfer?: boolean; items: InvoiceItem[]; }
 interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string; html?: string } | null; invoice_details?: Record<string, InvoiceDetail[]>; }
 
 /** 报销表批注快捷模板 */
@@ -326,6 +326,7 @@ export default function ReviewMaterials({ user }: Props) {
                        onClick={() => setLightbox({ files, index: i, label: TYPE_CONFIGS[t].label })}>
                     <div className="invoice-card-head">
                       <span className="invoice-card-name"><Icon name="receipt" size={14} /> {f.name}</span>
+                      {d?.is_public_transfer && <span className="badge badge-ok" style={{ marginLeft: 6 }}>公对公转账</span>}
                       {d && <span className="invoice-card-amount">¥{Number(d.reimbursement_amount || 0).toFixed(2)}</span>}
                     </div>
                     <div className="invoice-card-items">

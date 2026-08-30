@@ -156,6 +156,13 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
                 <span className={`badge ${invoice.buyer_name_valid ? 'badge-ok' : 'badge-warn'}`} style={{ marginLeft: 6 }}><Icon name={invoice.buyer_name_valid ? 'check' : 'alert-triangle'} size={12} /></span>
                 {invoice.invoice_total > 0 && ` | 总额 ¥${invoice.invoice_total.toFixed(2)}`}
               </span>}
+              <label className="form-switch" style={{ marginLeft: 12 }} title="该发票是否通过公对公转账付款">
+                <span className="form-switch-name">公对公转账</span>
+                <input type="checkbox" checked={!!invoice.is_public_transfer}
+                  onChange={e => updateInvoice(invIdx, { is_public_transfer: e.target.checked })} />
+                <span className="form-switch-track" />
+                <span className="form-switch-value">{invoice.is_public_transfer ? '是' : '否'}</span>
+              </label>
             </h2>
             {formData.invoices.length > 1 && (
               <div className="card-actions">

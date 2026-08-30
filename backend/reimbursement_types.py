@@ -7,13 +7,14 @@
 """
 
 # 报销类型
-REIMBURSEMENT_TYPES = ["vat", "insurance", "travel", "bulk"]
+REIMBURSEMENT_TYPES = ["vat", "insurance", "travel", "bulk", "large"]
 
 TYPE_LABELS = {
     "vat": "增值税报销",
     "insurance": "保险报销",
     "travel": "路费报销",
     "bulk": "大量发票报销",
+    "large": "大额报销",
 }
 
 # 材料定义：key → 配置（label 中文名 / zip_folder ZIP 内文件夹名 / zip_prefix 编号前缀 /
@@ -86,6 +87,28 @@ MATERIALS = {
         "use_ocr": False,
         "upload_subdir": "payments",
     },
+    "supplier_detail": {
+        "label": "供应商明细表单",
+        "zip_folder": "供应商明细表单",
+        "zip_prefix": "供应商明细",
+        "accept_exts": {".pdf", ".png", ".jpg", ".jpeg"},
+        "max_size_mb": 20,
+        "min_count": 1,
+        "max_count": 20,
+        "use_ocr": False,
+        "upload_subdir": "supplier_detail",
+    },
+    "payments_voucher": {
+        "label": "支付凭证",
+        "zip_folder": "支付凭证",
+        "zip_prefix": "支付凭证",
+        "accept_exts": {".png", ".jpg", ".jpeg"},
+        "max_size_mb": 10,
+        "min_count": 1,
+        "max_count": 20,
+        "use_ocr": False,
+        "upload_subdir": "payments_voucher",
+    },
 }
 
 # 每种报销类型需要的材料（顺序即打包/预览/审核展示顺序）
@@ -94,6 +117,7 @@ TYPE_MATERIALS = {
     "insurance": ["invoices", "policy"],
     "travel": ["invoices", "rider_ids", "itinerary", "payments"],
     "bulk": ["invoices", "evidence"],
+    "large": ["invoices", "supplier_detail", "payments_voucher"],
 }
 
 # 类型级覆盖（默认继承 MATERIALS）

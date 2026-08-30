@@ -35,6 +35,7 @@ function makeEmptyInvoice(type: ReimbursementType): InvoiceSection {
   return {
     buyer_name: '', buyer_tax_id: '', buyer_name_valid: false, buyer_tax_id_valid: false,
     invoice_date: '', invoice_total: 0, reimbursement_amount: 0, handler: '', reimb_type: type,
+    is_public_transfer: false,
     items: [{ name: '', unit_price: 0, quantity: 1, amount: 0, purchase_channel: '网购', reusable: '否', source_invoice_item: false }],
   };
 }
@@ -140,7 +141,7 @@ export default function App() {
     // 旧草稿迁移：type → types 数组；发票补类型标签；OCR 结果按类型打包
     const raw: any = { ...(draft.form_data || emptyForm) };
     const types: ReimbursementType[] = (raw.types?.length ? raw.types : (raw.type ? [raw.type] : ['vat']))
-      .filter((t: string) => ['vat', 'insurance', 'travel', 'bulk'].includes(t)) as ReimbursementType[];
+      .filter((t: string) => ['vat', 'insurance', 'travel', 'bulk', 'large'].includes(t)) as ReimbursementType[];
     const invoices: InvoiceSection[] = (raw.invoices || []).map((inv: any) => ({ ...inv, reimb_type: inv.reimb_type || types[0] }));
     setFormData({ ...emptyForm, ...raw, types, invoices });
     const ocr: any = draft.ocr_results || {};
@@ -195,6 +196,7 @@ export default function App() {
     const sections: InvoiceSection[] = results.map(r => ({
       buyer_name: r.buyer_name, buyer_tax_id: r.buyer_tax_id, buyer_name_valid: r.buyer_name_valid, buyer_tax_id_valid: r.buyer_tax_id_valid,
       invoice_date: r.invoice_date, invoice_total: r.invoice_total, reimbursement_amount: r.invoice_total, handler: '', reimb_type: type,
+      is_public_transfer: false,
       items: r.items.length ? r.items.map(item => ({ name: item.name, unit_price: item.unit_price, quantity: item.quantity, amount: item.amount, purchase_channel: '网购', reusable: '否', source_invoice_item: true }))
         : [{ name: '', unit_price: 0, quantity: 1, amount: 0, purchase_channel: '网购', reusable: '否', source_invoice_item: false }],
     }));
@@ -217,7 +219,7 @@ export default function App() {
   const handleReEdit = useCallback((data: any) => {
     const raw: any = { ...(data.form_data || data) };
     const types: ReimbursementType[] = (raw.types?.length ? raw.types : (raw.type ? [raw.type] : ['vat']))
-      .filter((t: string) => ['vat', 'insurance', 'travel', 'bulk'].includes(t)) as ReimbursementType[];
+      .filter((t: string) => ['vat', 'insurance', 'travel', 'bulk', 'large'].includes(t)) as ReimbursementType[];
     const invoices: InvoiceSection[] = (raw.invoices || []).map((inv: any) => ({ ...inv, reimb_type: inv.reimb_type || types[0] }));
     const restored = { ...emptyForm, ...raw, types, invoices };
     setFormData({ ...restored, previous_zip: data._previousZip || restored.previous_zip || '' });

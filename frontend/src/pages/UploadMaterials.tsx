@@ -133,9 +133,14 @@ export default function UploadMaterials({
     ...(activeType === 'insurance' ? [{
       text: <>保险报销需同时上传<strong>发票与保险单原单</strong>，两者缺一不可</>,
     }] : []),
+    ...(activeType === 'large' ? [{
+      text: <>单项报销 <strong>≥1000 元</strong>的报销归属大额报销，需同时上传<strong>发票、供应商明细表单与支付凭证</strong></>,
+    }] : []),
     {
       tone: 'warn',
-      text: <>单项报销超 <strong>2000 元</strong>需附付款截图（可随活动凭证上传或线下附上）；单品尽量≤<strong>1000 元</strong>（数量叠加超 1000 无碍）；总额超 <strong>1 万元</strong>请提前联系 OSA 老师</>,
+      text: activeType === 'large'
+        ? <>总额超 <strong>1 万元</strong>请提前联系 OSA 老师</>
+        : <>单项报销 <strong>≥1000 元</strong>请选择「大额报销」类型提交（需附供应商明细表单与支付凭证）；总额超 <strong>1 万元</strong>请提前联系 OSA 老师</>,
     },
     {
       text: <>活动凭证需 1-2 张活动现场照片（海报 / 推送 / 邮件截图亦可）</>,

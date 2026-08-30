@@ -23,6 +23,8 @@ class InvoiceSectionData:
     handler: str = ""
     items: list[dict] = field(default_factory=list)
     reimb_type: str = "vat"
+    # 是否公对公转账（报销人填写报销表时标注，随报销单显示在审核端）
+    is_public_transfer: bool = False
 
 
 @dataclass
@@ -152,6 +154,20 @@ def check_alipay_format(data: ReimbursementFormData) -> tuple[bool, str]:
     return True, ""
 
 
+_LARGE_AMOUNT_THRESHOLD = 1000
+
+
+def check_large_amount_type(data: ReimbursementFormData) -> tuple[bool, str]:
+    """单项报销 ≥1000 元的发票必须归属「大额报销」类型（报销人选择该类型提交）"""
+    for i, inv in enumerate(data.invoices):
+        if inv.reimbursement_amount >= _LARGE_AMOUNT_THRESHOLD and inv.reimb_type != "large":
+            return False, (
+                f"发票{i+1}报销金额({inv.reimbursement_amount:.2f}元)≥1000元，"
+                f"需归属「大额报销」类型提交（并上传供应商明细表单与支付凭证）"
+            )
+    return True, ""
+
+
 # 校验规则注册表（按执行顺序）
 RULES: list[tuple[str, Callable[[ReimbursementFormData], tuple[bool, str]]]] = [
     ("至少一张发票", check_invoice_sections_exist),
@@ -160,4 +176,5 @@ RULES: list[tuple[str, Callable[[ReimbursementFormData], tuple[bool, str]]]] = [
     ("必填项检查", check_required_fields),
     ("报销金额上限", check_reimbursement_le_invoice),
     ("支付宝账号格式", check_alipay_format),
+    ("大额报销归属", check_large_amount_type),
 ]

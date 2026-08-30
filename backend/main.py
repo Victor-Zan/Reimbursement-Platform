@@ -343,7 +343,7 @@ async def submit_package(request: Request):
 
     # 保存上传文件（已有路径 + 新上传），按类型×材料校验
     # 文件校验只作用于新材料与新增类型专属规则；增值税的发票/活动凭证保持现状零校验
-    NEW_MATERIAL_KEYS = {"policy", "rider_ids", "itinerary", "payments"}
+    NEW_MATERIAL_KEYS = {"policy", "rider_ids", "itinerary", "payments", "supplier_detail", "payments_voucher"}
 
     def _invoice_type_of(inv: dict) -> str:
         """发票所属类型：多类型按发票自带标签，旧单类型回退表单类型。"""
@@ -1115,6 +1115,7 @@ async def api_preview_submission(filename: str):
                         invoice_details.setdefault(t, []).append({
                             "invoice_total": inv.get("invoice_total", 0),
                             "reimbursement_amount": inv.get("reimbursement_amount", 0),
+                            "is_public_transfer": bool(inv.get("is_public_transfer", False)),
                             "items": [
                                 {"name": it.get("name", ""), "unit_price": it.get("unit_price", 0), "quantity": it.get("quantity", 0)}
                                 for it in (inv.get("items") or []) if it.get("name")

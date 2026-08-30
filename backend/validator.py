@@ -57,6 +57,7 @@ def build_form_data(json_data: dict) -> ReimbursementFormData:
             handler=inv.get("handler", ""),
             items=inv.get("items", []),
             reimb_type=inv.get("reimb_type", "") or (types[0] if len(types) == 1 else "vat"),
+            is_public_transfer=bool(inv.get("is_public_transfer", False)),
         ))
 
     return ReimbursementFormData(
