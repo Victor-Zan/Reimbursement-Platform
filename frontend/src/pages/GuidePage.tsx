@@ -157,6 +157,8 @@ export default function GuidePage() {
   };
   // 有随图正文时显示当前图对应的一组，缺省回退页级 blocks
   const displayBlocks = page.blocksByImage ? (page.blocksByImage[imgIdx] ?? page.blocks) : page.blocks;
+  // 每图说明：滑动到第 i 张时显示 imageCaptions[i]，缺省回退页级 imageCaption
+  const imageCaption = page.imageCaptions ? (page.imageCaptions[imgIdx] ?? page.imageCaption) : page.imageCaption;
   const isFirst = pageIndex === 0;
   const isLast = pageIndex === book.pages.length - 1;
   const from = (location.state as { from?: string } | null)?.from;
@@ -224,7 +226,7 @@ export default function GuidePage() {
                     </div>
                   ) : (
                     <img className="guide-img" key={src} src={src}
-                         alt={page.imageCaption ?? page.title}
+                         alt={page.imageCaptions?.[i] ?? page.imageCaption ?? page.title}
                          onClick={() => setPreviewIdx(i)}
                          onError={() => setImgFailed(prev => { const next = [...prev]; next[i] = true; return next; })} />
                   ))}
@@ -241,12 +243,12 @@ export default function GuidePage() {
                    onClick={() => setPreviewIdx(0)}
                    onError={() => setImgFailed([true])} />
             )}
-            {page.imageCaption && <figcaption className="guide-img-caption">{page.imageCaption}</figcaption>}
+            {imageCaption && <figcaption className="guide-img-caption">{imageCaption}</figcaption>}
           </figure>
         )}
 
         {previewIdx >= 0 && images[previewIdx] && (
-          <ImagePreview images={images} index={previewIdx} alt={page.imageCaption ?? page.title}
+          <ImagePreview images={images} index={previewIdx} alt={imageCaption ?? page.title}
                         onIndex={setPreviewIdx} onClose={() => setPreviewIdx(-1)} />
         )}
 

@@ -20,6 +20,7 @@ export interface GuidePage {
   icon?: string;          // Icon.tsx 注册表中的图标名，缺省 'info'
   image?: string | string[]; // 静态图片路径 '/guide/member-2.png'，或一页多张截图数组（按序竖排）；缺省则该页无图片区
   imageCaption?: string;  // 图片下方说明（兼作 img alt）
+  imageCaptions?: string[]; // 多图页：每张图各自的说明（滑动到第 i 张显示 imageCaptions[i]）；缺省回退 imageCaption
   blocks: GuideBlock[];   // 页面内容块
   blocksByImage?: GuideBlock[][]; // 多图页正文：按图片下标分组，滑动到第 i 张图时显示 blocksByImage[i]；缺省回退 blocks
 }
@@ -160,6 +161,14 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
           '/guide/member-6-6.png',
         ],
         imageCaption: '审核反馈页：结果列表 + 批注弹窗',
+        imageCaptions: [
+          '提交成功页',
+          '查看历史提交',
+          '查看历史提交',
+          '审核反馈列表',
+          '审核反馈列表',
+          '审核反馈列表',
+        ],
         blocks: [
           {
             type: 'list',
@@ -217,6 +226,7 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
                 '每条申请一行：标题、类型徽章、**状态徽章**（已通过 / 已打回）',
                 '已通过显示只读**报销进度**（报销流程中 / 已报销）',
                 '点击任意一条打开批注弹窗',
+                '已打回的申请：点击「**已打回**」徽章，可**重新编辑**修改后重交，或提交**申诉**（意见反馈）',
               ],
             },
             { type: 'tip', text: '待审核（还没结果）的申请不会出现在这里。' },
@@ -230,6 +240,7 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
                 '每条申请一行：标题、类型徽章、**状态徽章**（已通过 / 已打回）',
                 '已通过显示只读**报销进度**（报销流程中 / 已报销）',
                 '点击任意一条打开批注弹窗',
+                '已打回的申请：点击「**已打回**」徽章，可**重新编辑**修改后重交，或提交**申诉**（意见反馈）',
               ],
             },
             { type: 'tip', text: '待审核（还没结果）的申请不会出现在这里。' },
@@ -243,6 +254,7 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
                 '每条申请一行：标题、类型徽章、**状态徽章**（已通过 / 已打回）',
                 '已通过显示只读**报销进度**（报销流程中 / 已报销）',
                 '点击任意一条打开批注弹窗',
+                '已打回的申请：点击「**已打回**」徽章，可**重新编辑**修改后重交，或提交**申诉**（意见反馈）',
               ],
             },
             { type: 'tip', text: '待审核（还没结果）的申请不会出现在这里。' },
