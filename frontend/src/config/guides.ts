@@ -395,7 +395,7 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
       {
         title: '处理申诉',
         icon: 'alert-triangle',
-        image: '/guide/admin-3.png',
+        image: ['/guide/admin-3-1.png', '/guide/admin-3-2.png'],
         imageCaption: '申诉处理页：申诉列表 + 裁定按钮 + 打款证明上传',
         blocks: [
           {
