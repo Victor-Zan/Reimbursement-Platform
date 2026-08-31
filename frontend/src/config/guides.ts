@@ -107,6 +107,7 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
         imageCaption: '填表页：活动信息 + 每张发票的明细表',
         blocks: [
           { type: 'p', text: '系统已按发票识别结果填好大部分内容，你只需核对和补全。' },
+          { type: 'p', text: '图片中框选的内容是需要手动填写或复查确认的。' },
           {
             type: 'list',
             items: [
@@ -128,7 +129,7 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
       {
         title: '第三步 · 确认提交',
         icon: 'send',
-        image: '/guide/member-5.png',
+        image: ['/guide/member-5-1.png', '/guide/member-5-2.png'],
         imageCaption: '确认页：只读预览 + 预览 Excel / 保存草稿 / 确认提交',
         blocks: [
           { type: 'p', text: '此页只读：核对活动信息、每张发票、合计金额、经办人与材料清单，要修改只能点"上一步"回去改。' },
@@ -149,7 +150,14 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
       {
         title: '提交后跟进',
         icon: 'mail',
-        image: '/guide/member-6.png',
+        image: [
+          '/guide/member-6-1.png',
+          '/guide/member-6-2.png',
+          '/guide/member-6-3.png',
+          '/guide/member-6-4.png',
+          '/guide/member-6-5.png',
+          '/guide/member-6-6.png',
+        ],
         imageCaption: '审核反馈页：结果列表 + 批注弹窗',
         blocks: [
           {
