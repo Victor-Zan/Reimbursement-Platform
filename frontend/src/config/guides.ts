@@ -289,7 +289,7 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
       {
         title: '工作台与材料审核列表',
         icon: 'clipboard',
-        image: '/guide/reviewer-2.png',
+        image: ['/guide/reviewer-2-1.png', '/guide/reviewer-2-2.png'],
         imageCaption: '材料审核列表页：状态/类型/日期/社团筛选栏 + 申请列表',
         blocks: [
           { type: 'p', text: '工作台顶部四个统计：待审核（橙）、已通过（绿）、已打回（红）、已打回材料重审（紫）。' },
