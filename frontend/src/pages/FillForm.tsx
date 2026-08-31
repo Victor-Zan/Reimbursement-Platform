@@ -190,7 +190,6 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
             <span className="form-label">报销明细</span>
             <DetailTable items={invoice.items} onChange={(items) => updateInvoiceItems(invIdx, items)}
               invoiceTotal={invoice.invoice_total}
-              actualTotal={invoice.items.reduce((sum, item) => sum + (item.unit_price || 0) * (item.quantity || 0), 0)}
               allowNegativePrice={invoice.reimb_type === 'travel'} />
           </div>
 
@@ -222,7 +221,7 @@ export default function FillForm({ formData, updateForm, updateInvoice, updateIn
       </div>
 
       {/* 整体合计 */}
-      <div className="card card-total" style={{ textAlign: 'right' }}><span>实际花费合计：</span><span className="card-total-num">¥{formData.actual_total.toFixed(2)}</span></div>
+      <div className="card card-total" style={{ textAlign: 'right' }}><span>报销金额合计：</span><span className="card-total-num">¥{formData.actual_total.toFixed(2)}</span></div>
 
       {/* 表尾信息 */}
       <div className="card">

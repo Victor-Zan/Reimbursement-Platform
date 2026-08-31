@@ -213,7 +213,6 @@ export default function ReviewSubmit({
                     items={inv.items}
                     onChange={() => {}}
                     invoiceTotal={inv.invoice_total}
-                    actualTotal={inv.items.reduce((s, it) => s + (it.unit_price || 0) * (it.quantity || 0), 0)}
                     readonly
                   />
                 </div>
@@ -224,7 +223,7 @@ export default function ReviewSubmit({
             <div className="preview-section">
               <h3>合计</h3>
               <div className="preview-grid">
-                <span className="label">实际花费总计</span>
+                <span className="label">报销金额总计</span>
                 <span className="value value-num" style={{ fontWeight: 700 }}>
                   ¥{formData.actual_total.toFixed(2)}
                 </span>

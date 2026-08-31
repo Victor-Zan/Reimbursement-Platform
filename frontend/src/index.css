@@ -2801,3 +2801,319 @@ td input.error {
   color: var(--text-tertiary);
 }
 
+/* ---- 33. 操作指南 Guide ---- */
+
+/* 顶栏入口按钮：镜像 .top-nav-logout 的幽灵胶囊样式 */
+.top-nav-guide {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid rgba(240, 215, 140, .45);
+  border-radius: var(--radius-pill);
+  padding: 5px 14px;
+  color: var(--gold-on-primary-dim);
+  font-size: var(--fs-13);
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--dur);
+}
+
+.top-nav-guide:hover {
+  color: #fff;
+  border-color: var(--gold-on-primary);
+  background: rgba(255, 255, 255, .08);
+}
+
+/* 指南页 Hero 区：品牌紫渐变横幅（呼应顶栏渐变），金色书名 + 可点击进度点 */
+.guide-hero {
+  position: relative;
+  padding: 24px 28px 20px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, #6E2E82 0%, var(--primary) 100%);
+  box-shadow: var(--shadow-md);
+  margin-bottom: 24px;
+  color: #fff;
+  overflow: hidden;
+}
+
+/* 右上角径向光晕，呼应落地页 hero 的层次感 */
+.guide-hero::after {
+  content: '';
+  position: absolute;
+  right: -60px;
+  top: -60px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, .10), transparent 60%);
+  pointer-events: none;
+}
+
+.guide-hero-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.guide-hero-book {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-13);
+  color: var(--gold-on-primary);
+}
+
+/* 右上角关闭按钮：白底半透明圆钮，hover 旋转动效 */
+.guide-x {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .25);
+  background: rgba(255, 255, 255, .10);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--dur);
+}
+
+.guide-x:hover {
+  background: rgba(255, 255, 255, .22);
+  transform: rotate(90deg);
+}
+
+/* 页标题（不在 .page-head 内，需自带字号/字重/颜色） */
+.guide-hero-title {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-26);
+  font-weight: 700;
+  color: #fff;
+  margin: 16px 0 18px;
+}
+
+.guide-hero-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, .14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold-on-primary);
+  flex-shrink: 0;
+}
+
+/* 可点击进度点：当前页金色高亮 */
+.guide-progress {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.guide-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .30);
+  cursor: pointer;
+  transition: all var(--dur);
+}
+
+.guide-dot:hover {
+  transform: scale(1.25);
+}
+
+.guide-dot--active {
+  background: linear-gradient(135deg, var(--gold-bright), var(--gold));
+  transform: scale(1.35);
+  box-shadow: 0 0 0 3px rgba(201, 162, 39, .30);
+}
+
+/* 内容区：复用全局 .card，仅挂翻页淡入动画（key 重挂载触发） */
+.guide-stage {
+  animation: guide-fade .28s var(--ease);
+}
+
+@keyframes guide-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.guide-p {
+  font-size: var(--fs-14);
+  color: var(--text-secondary);
+  line-height: var(--lh);
+  margin-bottom: 12px;
+}
+
+/* 要点列表：显式 reset ul 默认样式，紫色圆点前缀 */
+.guide-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.guide-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: var(--fs-14);
+  color: var(--text-secondary);
+  line-height: var(--lh);
+}
+
+.guide-list li::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+
+/* 重要提示条：紫色渐变底 + 金色左条（重要提示整体以紫色呈现） */
+.guide-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--primary-line);
+  border-left: 3px solid var(--gold-bright);
+  background: linear-gradient(135deg, var(--primary-soft), #fff 85%);
+  color: var(--primary);
+  font-size: var(--fs-14);
+  line-height: var(--lh);
+}
+
+.guide-tip svg {
+  color: var(--gold-strong);
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+/* **紫色强调** 标记渲染 */
+.guide-em {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* 图片卡：浅紫渐变底（figure 默认 margin 需显式 reset） */
+.guide-img-card {
+  margin: 0 0 16px;
+  padding: 16px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--primary-soft), var(--surface));
+  border: 1px solid var(--primary-line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.guide-img {
+  max-width: 100%;
+  max-height: 340px;
+  margin: 0 auto;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+}
+
+.guide-img-caption {
+  display: block;
+  margin-top: 10px;
+  font-size: var(--fs-13);
+  color: var(--text-tertiary);
+}
+
+/* 缺图占位：紫色虚线框 */
+.guide-img-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 16px;
+  margin-bottom: 16px;
+  border: 1.5px dashed var(--primary-line);
+  border-radius: var(--radius-lg);
+  background: var(--primary-soft);
+  color: var(--text-tertiary);
+  font-size: var(--fs-13);
+}
+
+.guide-img-placeholder svg {
+  color: var(--primary);
+}
+
+/* 底部分页栏：Grid 三列保证页码恒居中，箭头显隐不影响 */
+.guide-foot {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding-top: 16px;
+  margin-top: 8px;
+  border-top: 1px solid var(--gray-200);
+}
+
+.guide-nav-left {
+  justify-self: start;
+}
+
+.guide-nav-right {
+  justify-self: end;
+}
+
+.guide-nav-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--primary-line);
+  background: var(--surface);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--dur);
+}
+
+.guide-nav-btn:hover {
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(74, 29, 99, .28);
+}
+
+.guide-page-num {
+  font-size: var(--fs-13);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* 移动端：紧凑 hero 与控件 */
+@media (max-width: 768px) {
+  .guide-hero { padding: 20px 16px; }
+  .guide-hero-title { font-size: var(--fs-22); margin: 14px 0 16px; }
+  .guide-img { max-height: 240px; }
+  .guide-tip { padding: 10px 12px; }
+  .guide-nav-btn { width: 36px; height: 36px; }
+}
+

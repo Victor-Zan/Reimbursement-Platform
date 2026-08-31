@@ -5,7 +5,6 @@ interface Props {
   items: DetailRow[];
   onChange: (items: DetailRow[]) => void;
   invoiceTotal: number;
-  actualTotal: number;
   readonly?: boolean;
   /** 允许负数单价（仅出行类报销，如退票差价） */
   allowNegativePrice?: boolean;
@@ -18,7 +17,6 @@ export default function DetailTable({
   items,
   onChange,
   invoiceTotal,
-  actualTotal,
   readonly = false,
   allowNegativePrice = false,
 }: Props) {
@@ -172,11 +170,8 @@ export default function DetailTable({
       )}
 
       <div className="table-total">
-        实际花费合计：¥{actualTotal.toFixed(2)}
         {invoiceTotal > 0 && (
-          <span className="table-note" style={{ marginLeft: 16 }}>
-            （发票总额：¥{invoiceTotal.toFixed(2)}）
-          </span>
+          <span className="table-note">发票总额：¥{invoiceTotal.toFixed(2)}</span>
         )}
       </div>
     </div>

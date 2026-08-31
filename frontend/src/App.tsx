@@ -18,6 +18,7 @@ import UploadMaterials from './pages/UploadMaterials';
 import FillForm from './pages/FillForm';
 import ReviewSubmit from './pages/ReviewSubmit';
 import HomePage from './pages/HomePage';
+import GuidePage from './pages/GuidePage';
 import { OCRResult, ReimbursementFormData, InvoiceSection, DetailRow, ReimbursementType, MaterialKey } from './types';
 import { SELECTABLE_TYPES } from './config/materials';
 import { useFeedback } from './components/Feedback';
@@ -175,8 +176,15 @@ export default function App() {
   };
   const updateInvoiceItems = (invIndex: number, items: DetailRow[]) => {
     setFormData(p => {
-      const invoices = [...p.invoices]; invoices[invIndex] = { ...invoices[invIndex], items };
-      let total = 0; for (const inv of invoices) total += inv.reimbursement_amount || 0;
+      const invoices = [...p.invoices];
+      const inv = invoices[invIndex];
+      // 明细行变化时，报销金额自动同步为该发票实际花销（Σ单价×数量）；
+      // 仅当报销金额仍为默认值（0 / 发票总额 / 旧明细合计）才跟随，用户手动改过的值不动
+      const oldSubtotal = inv.items.reduce((s, it) => s + (it.unit_price || 0) * (it.quantity || 0), 0);
+      const newSubtotal = items.reduce((s, it) => s + (it.unit_price || 0) * (it.quantity || 0), 0);
+      const untouched = inv.reimbursement_amount === 0 || inv.reimbursement_amount === inv.invoice_total || inv.reimbursement_amount === oldSubtotal;
+      invoices[invIndex] = { ...inv, items, reimbursement_amount: untouched ? newSubtotal : inv.reimbursement_amount };
+      let total = 0; for (const inv2 of invoices) total += inv2.reimbursement_amount || 0;
       return { ...p, invoices, actual_total: total };
     });
   };
@@ -272,13 +280,16 @@ export default function App() {
       <Route path="/member/upload" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><UploadMaterials {...wizardProps} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/fill" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><FillForm formData={formData} updateForm={updateForm} updateInvoice={updateInvoice} updateInvoiceItems={updateInvoiceItems} userEmail={auth?.user?.email || ''} onAddInvoice={addInvoice} onRemoveInvoice={removeInvoice} onBack={() => navigate('/member/upload')} onNext={() => navigate('/member/review')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} /></div></> : <Navigate to="/login" />} />
       <Route path="/member/review" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewSubmit formData={formData} materials={materials} userEmail={auth?.user?.email || ''} submitResult={submitResult} setSubmitResult={setSubmitResult} onBack={() => navigate('/member/fill')} onSaveDraft={saveDraft} onHome={promptSaveBeforeHome} onReset={() => { resetAll(); navigate('/member'); }} /></div></> : <Navigate to="/login" />} />
+      <Route path="/member/guide" element={auth ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><GuidePage /></div></> : <Navigate to="/login" />} />
       <Route path="/reviewer" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewerDashboard user={auth.user} /></div></> : <Navigate to="/login" />} />
+      <Route path="/reviewer/guide" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><GuidePage /></div></> : <Navigate to="/login" />} />
       <Route path="/reviewer/materials" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewMaterials user={auth.user} /></div></> : <Navigate to="/login" />} />
       <Route path="/reviewer/history" element={auth?.user?.is_reviewer ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><ReviewerHistory /></div></> : <Navigate to="/login" />} />
 
       <Route path="/admin" element={auth?.user?.is_admin ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><AdminDashboard user={auth.user} /></div></> : <Navigate to="/login" />} />
       <Route path="/admin/permissions" element={auth?.user?.is_admin ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><AdminPermissions /></div></> : <Navigate to="/login" />} />
       <Route path="/admin/appeals" element={auth?.user?.is_admin ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><AdminAppeals user={auth.user} /></div></> : <Navigate to="/login" />} />
+      <Route path="/admin/guide" element={auth?.user?.is_admin ? <><TopNav user={auth?.user} onLogout={handleLogout} /><div className="page"><GuidePage /></div></> : <Navigate to="/login" />} />
 
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
