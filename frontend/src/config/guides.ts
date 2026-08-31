@@ -310,7 +310,7 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
       {
         title: '审核操作',
         icon: 'eye',
-        image: '/guide/reviewer-3.png',
+        image: ['/guide/reviewer-3-1.png', '/guide/reviewer-3-2.png', '/guide/reviewer-3-3.png', '/guide/reviewer-3-4.png'],
         imageCaption: '审核弹窗：材料缩略图 + 批注框 + 确认无误/打回修改按钮',
         blocks: [
           {
