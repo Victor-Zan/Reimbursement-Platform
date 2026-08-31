@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { GUIDE_BOOKS, guideRoleFromPath, type GuideBlock } from '../config/guides';
@@ -16,6 +16,94 @@ function renderGuideText(text: string, keyPrefix: string): ReactNode {
         ? <strong key={`${keyPrefix}-${i}`} className="guide-em">{seg}</strong>
         : <span key={`${keyPrefix}-${i}`}>{seg}</span>
       : null,
+  );
+}
+
+/**
+ * 全屏图片预览（复用全局 .lightbox 结构）：滚轮以鼠标为锚点缩放（1–6 倍）、
+ * 缩放后可拖拽平移、双击在「适配屏幕 / 3 倍」间切换；Esc、点击遮罩或 X 关闭。
+ */
+function ImagePreview({ images, index, alt, onIndex, onClose }: {
+  images: string[]; index: number; alt: string; onIndex: (i: number) => void; onClose: () => void;
+}) {
+  const src = images[index];
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  // 切换图片时重置缩放与位移
+  useEffect(() => { setZoom(1); zoomRef.current = 1; setPos({ x: 0, y: 0 }); }, [src]);
+
+  // Esc 关闭
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // 滚轮缩放（原生监听以阻止页面滚动），以鼠标位置为锚点：newPos = anchor - (anchor - oldPos) * k
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const anchor = { x: e.clientX - rect.left - rect.width / 2, y: e.clientY - rect.top - rect.height / 2 };
+      const nz = Math.min(6, Math.max(1, zoomRef.current * Math.pow(1.15, -e.deltaY / 100)));
+      if (nz === zoomRef.current) return;
+      const k = nz / zoomRef.current;
+      setPos(p => ({ x: anchor.x - (anchor.x - p.x) * k, y: anchor.y - (anchor.y - p.y) * k }));
+      zoomRef.current = nz;
+      setZoom(nz);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (zoomRef.current <= 1) return;
+    drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
+    e.preventDefault();
+  };
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!drag.current) return;
+    setPos({ x: drag.current.ox + e.clientX - drag.current.sx, y: drag.current.oy + e.clientY - drag.current.sy });
+  };
+  const endDrag = () => { drag.current = null; };
+  const onDblClick = () => {
+    const nz = zoomRef.current <= 1.05 ? 3 : 1;
+    const k = nz / zoomRef.current;
+    setPos(p => ({ x: p.x * k, y: p.y * k }));
+    zoomRef.current = nz;
+    setZoom(nz);
+  };
+
+  return (
+    <div className="lightbox" onClick={onClose}>
+      <div className="lightbox-bar" onClick={e => e.stopPropagation()}>
+        <span>截图预览 {index + 1} / {images.length} · 滚轮缩放，拖拽平移，双击复位</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {images.length > 1 && (
+            <>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={index === 0} onClick={() => onIndex(index - 1)}><Icon name="arrow-left" size={14} /> 上一张</button>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={index === images.length - 1} onClick={() => onIndex(index + 1)}>下一张 <Icon name="arrow-right" size={14} /></button>
+            </>
+          )}
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}><Icon name="x" size={14} /> 关闭</button>
+        </div>
+      </div>
+      <div ref={bodyRef} className="lightbox-body lightbox--zoom"
+           onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={endDrag} onMouseLeave={endDrag}
+           onClick={e => e.stopPropagation()}>
+        <img src={src} alt={alt} draggable={false}
+             style={zoom > 1
+               ? { transform: `translate(${pos.x}px, ${pos.y}px) scale(${zoom})`, cursor: drag.current ? 'grabbing' : 'grab' }
+               : { cursor: 'zoom-in' }}
+             onDoubleClick={onDblClick} />
+      </div>
+    </div>
   );
 }
 
@@ -47,14 +135,23 @@ export default function GuidePage() {
   const role = guideRoleFromPath(location.pathname);   // /member/guide → member
   const book = GUIDE_BOOKS[role];
   const [pageIndex, setPageIndex] = useState(0);
-  const [imgFailed, setImgFailed] = useState(false);
+  const [imgFailed, setImgFailed] = useState<boolean[]>([]);
+  const [previewIdx, setPreviewIdx] = useState(-1);  // 全屏预览当前图下标，-1 = 未打开
   const page = book.pages[pageIndex];
+  const images = Array.isArray(page.image) ? page.image : page.image ? [page.image] : [];
+  const trackRef = useRef<HTMLDivElement>(null);
+  // 多图卡片：左右箭头按一屏宽度平滑滚动
+  const scrollTrack = (dir: 1 | -1) => {
+    const el = trackRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir * el.clientWidth, behavior: 'smooth' });
+  };
   const isFirst = pageIndex === 0;
   const isLast = pageIndex === book.pages.length - 1;
   const from = (location.state as { from?: string } | null)?.from;
 
   // 翻页时重置图片错误态（否则切到有图的页仍显示占位）
-  useEffect(() => { setImgFailed(false); }, [pageIndex]);
+  useEffect(() => { setImgFailed([]); }, [pageIndex]);
 
   // 返回：① 有 from → 回到打开前页面；② 刷新后 from 丢失但标签页历史还在 → back；
   // ③ 新标签直接输 URL（无历史，location.key === 'default'）→ 落角色首页
@@ -64,12 +161,13 @@ export default function GuidePage() {
     else navigate('/' + role);
   }, [from, location.key, location.pathname, role, navigate]);
 
-  // Esc → 返回（与旧弹窗体验一致）
+  // Esc → 返回（与旧弹窗体验一致）；全屏预览打开时 Esc 由预览层处理，不触发返回
   useEffect(() => {
+    if (previewIdx >= 0) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') goBack(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [goBack]);
+  }, [goBack, previewIdx]);
 
   return (
     <>
@@ -97,20 +195,49 @@ export default function GuidePage() {
 
       {/* 内容区：复用全局 .card；key={pageIndex} 重挂载以重播翻页动画 */}
       <div className="card guide-stage" key={pageIndex}>
-        {page.image && !imgFailed ? (
+        {images.length > 0 && (
           <figure className="guide-img-card">
-            <img className="guide-img" src={page.image}
-                 alt={page.imageCaption ?? page.title}
-                 onError={() => setImgFailed(true)} />
+            {images.length > 1 ? (
+              <>
+                <button type="button" className="guide-img-arrow guide-img-arrow--left" aria-label="上一张截图" onClick={() => scrollTrack(-1)}>
+                  <Icon name="arrow-left" size={16} />
+                </button>
+                <button type="button" className="guide-img-arrow guide-img-arrow--right" aria-label="下一张截图" onClick={() => scrollTrack(1)}>
+                  <Icon name="arrow-right" size={16} />
+                </button>
+                <div className="guide-img-track" ref={trackRef}>
+                  {images.map((src, i) => imgFailed[i] ? (
+                    <div className="guide-img-placeholder" key={src}>
+                      <Icon name="image" size={28} />
+                      <span>截图待补充：{src}</span>
+                    </div>
+                  ) : (
+                    <img className="guide-img" key={src} src={src}
+                         alt={page.imageCaption ?? page.title}
+                         onClick={() => setPreviewIdx(i)}
+                         onError={() => setImgFailed(prev => { const next = [...prev]; next[i] = true; return next; })} />
+                  ))}
+                </div>
+              </>
+            ) : imgFailed[0] ? (
+              <div className="guide-img-placeholder">
+                <Icon name="image" size={28} />
+                <span>截图待补充：{images[0]}</span>
+              </div>
+            ) : (
+              <img className="guide-img" src={images[0]}
+                   alt={page.imageCaption ?? page.title}
+                   onClick={() => setPreviewIdx(0)}
+                   onError={() => setImgFailed([true])} />
+            )}
             {page.imageCaption && <figcaption className="guide-img-caption">{page.imageCaption}</figcaption>}
           </figure>
-        ) : page.image ? (
-          <div className="guide-img-placeholder">
-            <Icon name="image" size={28} />
-            <span>截图待补充：{page.image}</span>
-            {page.imageCaption && <span className="guide-img-caption">{page.imageCaption}</span>}
-          </div>
-        ) : null}
+        )}
+
+        {previewIdx >= 0 && images[previewIdx] && (
+          <ImagePreview images={images} index={previewIdx} alt={page.imageCaption ?? page.title}
+                        onIndex={setPreviewIdx} onClose={() => setPreviewIdx(-1)} />
+        )}
 
         {page.blocks.map((b, i) => <GuideBlockView key={i} block={b} />)}
       </div>

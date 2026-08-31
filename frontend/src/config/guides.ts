@@ -18,7 +18,7 @@ export type GuideBlock =
 export interface GuidePage {
   title: string;          // 页标题
   icon?: string;          // Icon.tsx 注册表中的图标名，缺省 'info'
-  image?: string;         // 静态图片路径 '/guide/member-2.png'；缺省则该页无图片区
+  image?: string | string[]; // 静态图片路径 '/guide/member-2.png'，或一页多张截图数组（按序竖排）；缺省则该页无图片区
   imageCaption?: string;  // 图片下方说明（兼作 img alt）
   blocks: GuideBlock[];   // 页面内容块
 }
@@ -83,7 +83,7 @@ export const GUIDE_BOOKS: Record<GuideRoleKey, GuideBook> = {
       {
         title: '第一步 · 上传材料',
         icon: 'upload-cloud',
-        image: '/guide/member-3.png',
+        image: ['/guide/member-3-1.png', '/guide/member-3-2.png'],
         imageCaption: '上传页：顶部类型标签页 + 各材料上传卡片',
         blocks: [
           { type: 'p', text: '顶部标签页选择本次包含的报销类型（增值税/保险/出行/大额），可多选，每种类型独立上传、独立识别。' },

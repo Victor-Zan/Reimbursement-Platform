@@ -2059,6 +2059,12 @@ td input.error {
   object-fit: contain;
 }
 
+/* 指南全屏预览（.lightbox--zoom）：缩放/拖拽时防止选中与图片默认拖拽 */
+.lightbox--zoom img {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 /* ---- 25. PDF Preview ---- */
 .pdf-shell {
   border: var(--hairline);
@@ -3018,6 +3024,7 @@ td input.error {
 
 /* 图片卡：浅紫渐变底（figure 默认 margin 需显式 reset） */
 .guide-img-card {
+  position: relative;
   margin: 0 0 16px;
   padding: 16px;
   text-align: center;
@@ -3026,6 +3033,50 @@ td input.error {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
+
+/* 多图卡片：横向滑动轨道，一屏一张（箭头按钮定位在卡片两侧） */
+.guide-img-track {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+}
+
+.guide-img-track .guide-img {
+  flex: 0 0 100%;
+  max-width: 100%;
+  scroll-snap-align: center;
+}
+
+.guide-img-track .guide-img-placeholder {
+  flex: 0 0 100%;
+  margin-bottom: 0;
+}
+
+.guide-img-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--primary-line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.guide-img-arrow:hover { background: var(--primary-soft); }
+.guide-img-arrow--left { left: 4px; }
+.guide-img-arrow--right { right: 4px; }
+
+/* 卡片内占位（缺图降级）不需要额外底部边距 */
+.guide-img-card .guide-img-placeholder { margin-bottom: 0; }
 
 .guide-img {
   max-width: 100%;
