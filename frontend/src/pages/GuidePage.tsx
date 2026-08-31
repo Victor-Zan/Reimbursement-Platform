@@ -137,6 +137,7 @@ export default function GuidePage() {
   const [pageIndex, setPageIndex] = useState(0);
   const [imgFailed, setImgFailed] = useState<boolean[]>([]);
   const [previewIdx, setPreviewIdx] = useState(-1);  // 全屏预览当前图下标，-1 = 未打开
+  const [imgIdx, setImgIdx] = useState(0);           // 多图卡片当前可见图下标（正文随图切换）
   const page = book.pages[pageIndex];
   const images = Array.isArray(page.image) ? page.image : page.image ? [page.image] : [];
   const trackRef = useRef<HTMLDivElement>(null);
@@ -146,12 +147,22 @@ export default function GuidePage() {
     if (!el) return;
     el.scrollBy({ left: dir * el.clientWidth, behavior: 'smooth' });
   };
+  // 滑动/箭头滚动时跟踪当前可见图：scroll-snap 下 scrollLeft 稳定停在子元素步长整数倍
+  const onTrackScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.children.length < 2) return;
+    const step = (el.children[1] as HTMLElement).offsetLeft - (el.children[0] as HTMLElement).offsetLeft;
+    const idx = Math.max(0, Math.min(el.children.length - 1, Math.round(el.scrollLeft / step)));
+    if (idx !== imgIdx) setImgIdx(idx);
+  };
+  // 有随图正文时显示当前图对应的一组，缺省回退页级 blocks
+  const displayBlocks = page.blocksByImage ? (page.blocksByImage[imgIdx] ?? page.blocks) : page.blocks;
   const isFirst = pageIndex === 0;
   const isLast = pageIndex === book.pages.length - 1;
   const from = (location.state as { from?: string } | null)?.from;
 
-  // 翻页时重置图片错误态（否则切到有图的页仍显示占位）
-  useEffect(() => { setImgFailed([]); }, [pageIndex]);
+  // 翻页时重置图片错误态与随图正文下标（页卡 key={pageIndex} 重挂载已重置滚动位置）
+  useEffect(() => { setImgFailed([]); setImgIdx(0); }, [pageIndex]);
 
   // 返回：① 有 from → 回到打开前页面；② 刷新后 from 丢失但标签页历史还在 → back；
   // ③ 新标签直接输 URL（无历史，location.key === 'default'）→ 落角色首页
@@ -205,7 +216,7 @@ export default function GuidePage() {
                 <button type="button" className="guide-img-arrow guide-img-arrow--right" aria-label="下一张截图" onClick={() => scrollTrack(1)}>
                   <Icon name="arrow-right" size={16} />
                 </button>
-                <div className="guide-img-track" ref={trackRef}>
+                <div className="guide-img-track" ref={trackRef} onScroll={onTrackScroll}>
                   {images.map((src, i) => imgFailed[i] ? (
                     <div className="guide-img-placeholder" key={src}>
                       <Icon name="image" size={28} />
@@ -239,7 +250,7 @@ export default function GuidePage() {
                         onIndex={setPreviewIdx} onClose={() => setPreviewIdx(-1)} />
         )}
 
-        {page.blocks.map((b, i) => <GuideBlockView key={i} block={b} />)}
+        {displayBlocks.map((b, i) => <GuideBlockView key={i} block={b} />)}
       </div>
 
       {/* 底部导航：Grid 三列保证页码恒居中 */}
