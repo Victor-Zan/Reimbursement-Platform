@@ -473,7 +473,7 @@ export default function ReviewMaterials({ user }: Props) {
                       <Icon name="info" size={15} /> 审查提示
                       <button className="btn btn-ghost btn-sm" onClick={() => setShowHint(false)} title="关闭提示"><Icon name="x" size={12} /></button>
                     </div>
-                    <p>请重点核对：表中报销项目是否均可报销？有无错报、重复报销的情况？</p>
+                    <p>请重点核对：表中报销项目是否均可报销，有无错报、重复报销的情况。如有，则请详细批注具体项目以及不可报销的理由。</p>
                   </div>
                 )}
               </div>
