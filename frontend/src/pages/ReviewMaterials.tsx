@@ -20,7 +20,7 @@ interface InvoiceDetail { invoice_total: number; reimbursement_amount: number; i
 interface PreviewData { materials?: Record<string, PreviewFile[]>; type_materials?: Record<string, Record<string, PreviewFile[]>>; invoices?: PreviewFile[]; evidences?: PreviewFile[]; form: { name: string; download_url: string; html?: string } | null; invoice_details?: Record<string, InvoiceDetail[]>; }
 
 /** 报销表批注快捷模板 */
-const FORM_QUICK = ['拼接信息中组织名称有误', '拼接信息中活动名称有误', '拼接信息中物品名称有误', '拼接信息中金额有误'];
+const FORM_QUICK = ['拼接信息中组织名称有误', '拼接信息中活动名称有误', '拼接信息中物品名称有误', '拼接信息中金额有误', '项目不符合报销范围'];
 
 /** 审核窗口内的视图：清单 / 报销表 / 某类型某材料（"type:key"） */
 type ReviewView = 'list' | 'form' | string;
