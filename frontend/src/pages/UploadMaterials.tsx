@@ -13,6 +13,7 @@ interface Props {
   materials: TypeMaterialsState;
   setMaterialFiles: (type: ReimbursementType, key: MaterialKey, files: File[]) => void;
   clearMaterialExisting: (type: ReimbursementType, key: MaterialKey) => void;
+  removeExistingFile: (type: ReimbursementType, key: MaterialKey, index: number) => void;
   ocrResults: Partial<Record<ReimbursementType, OCRResult[]>>;
   setOcrResults: (type: ReimbursementType, results: OCRResult[]) => void;
   ocrLoading: boolean;
@@ -34,6 +35,55 @@ const typeFileCount = (materials: TypeMaterialsState, type: ReimbursementType): 
 const typeHasContent = (materials: TypeMaterialsState, type: ReimbursementType, invoiceSectionCounts: Partial<Record<ReimbursementType, number>>): boolean =>
   typeFileCount(materials, type) > 0 || (invoiceSectionCounts[type] || 0) > 0;
 
+/**
+ * 「原有文件」区（仅重编辑会话出现）：head 行 = label 左 + 紫色编辑按钮右，下方 chips 行。
+ * 编辑态下每张 chip 右上角出现 × 可删除；发票文件数与区块数不一致（removable=false）时
+ * chips 不显示 ×，仅展示引导文案。编辑态为块内局部状态：随卡片卸载复位，删除过程中保持开启。
+ */
+function ExistingFilesBlock({ label, icon, urls, removable, onRemove }: {
+  label: string;
+  icon: string;
+  urls: string[];
+  /** false = 发票数量不一致态：chips 不可删 */
+  removable: boolean;
+  /** 已通过确认的删除请求（index 为当前列表下标） */
+  onRemove: (index: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  if (urls.length === 0) return null;   // 删光后整块隐藏（含编辑按钮）
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div className="existing-files-head">
+        <span className="form-label">原有文件：</span>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => setEditing(e => !e)}>
+          <Icon name={editing ? 'check' : 'edit'} size={13} /> {editing ? '完成' : '编辑原有文件'}
+        </button>
+      </div>
+      <div className="file-list">
+        {urls.map((url, i) => (
+          <div key={i} className={`file-chip${editing && removable ? ' file-chip--editable' : ''}`}>
+            <a href={url} target="_blank" rel="noreferrer" className="file-link">
+              <Icon name={icon} size={14} /> {label}_{i + 1}
+            </a>
+            {editing && removable && (
+              <button type="button" className="file-chip-remove" aria-label={`删除${label}_${i + 1}`}
+                      title={`删除${label}_${i + 1}`} onClick={() => onRemove(i)}>
+                <Icon name="x" size={12} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {editing && !removable && (
+        <div className="existing-files-note">
+          <Icon name="alert-triangle" size={13} />
+          <span>该类型{label}文件数与报销表区块数不一致，无法按序号对应删除。请保留文件，改用第 2 步「填写报销表」页各发票卡片的「删除」按钮处理区块，或在下方重新上传{label}并识别以整体替换。</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** 某类型是否满足全部材料数量要求 */
 const typeComplete = (materials: TypeMaterialsState, type: ReimbursementType, invoiceSectionCounts: Partial<Record<ReimbursementType, number>>): boolean =>
   TYPE_MATERIALS[type].every(k => {
@@ -52,6 +102,7 @@ export default function UploadMaterials({
   materials,
   setMaterialFiles,
   clearMaterialExisting,
+  removeExistingFile,
   ocrResults,
   setOcrResults,
   ocrLoading,
@@ -62,7 +113,7 @@ export default function UploadMaterials({
   onNext,
   onHome,
 }: Props) {
-  const { toast } = useFeedback();
+  const { toast, confirm } = useFeedback();
   const [activeType, setActiveType] = useState<ReimbursementType>('vat');
   const [ocrErrors, setOcrErrors] = useState<Partial<Record<ReimbursementType, string>>>({});
 
@@ -106,6 +157,22 @@ export default function UploadMaterials({
       setOcrResults(activeType, []);
       clearMaterialExisting(activeType, key);
     }
+  };
+
+  // 删除原有文件：统一先确认；发票额外提示联动删除对应区块并重算合计
+  const handleRemoveExistingFile = async (key: MaterialKey, index: number) => {
+    const cfg = materialFor(activeType, key);
+    const isInvoice = key === 'invoices';
+    const name = `${cfg.label}_${index + 1}`;
+    const ok = await confirm({
+      message: isInvoice
+        ? `确定删除原有文件 ${name}？对应的报销区块（明细 / 金额 / 经手人）将一并删除，报销表合计同步更新。`
+        : `确定删除原有文件 ${name}？仅移除本轮编辑对该文件的引用，不影响其它内容。`,
+      tone: 'danger',
+    });
+    if (!ok) return;
+    removeExistingFile(activeType, key, index);
+    toast(isInvoice ? `已删除 ${name}，对应报销区块与合计已同步更新` : `已删除 ${name}`, 'success');
   };
 
   // 至少一个类型有内容，且每个有内容的类型满足全部材料要求
@@ -186,18 +253,12 @@ export default function UploadMaterials({
           <div className="card" key={key}>
             <h2 className="card-title"><Icon name={cfg.icon} size={18} /> 上传{cfg.label}</h2>
             <p className="card-sub" style={{ marginBottom: 12 }}>{cfg.hint}</p>
-            {entry.existingUrls.length > 0 && (
-              <div style={{ marginBottom: 12 }}>
-                <span className="form-label">原有文件：</span>
-                <div className="file-list">
-                  {entry.existingUrls.map((url, i) => (
-                    <div key={i} className="file-chip">
-                      <a href={url} target="_blank" rel="noreferrer" className="file-link"><Icon name={cfg.icon} size={14} /> {cfg.label}_{i + 1}</a>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* 原有文件区（重编辑会话；行末紫色小按钮进入编辑删除模式） */}
+            <ExistingFilesBlock
+              label={cfg.label} icon={cfg.icon} urls={entry.existingUrls}
+              removable={!isInvoice || entry.existingUrls.length === (invoiceSectionCounts[activeType] || 0)}
+              onRemove={(i) => void handleRemoveExistingFile(key, i)}
+            />
             <FileUploader file={null} setFile={() => {}} files={entry.files} setFiles={handleSetFiles(key)}
               label={isReEdit ? "替换或追加（可选）" : `点击或拖拽上传${cfg.label}（可多选）`} accept={cfg.accept} hint={cfg.hint} multiple />
 

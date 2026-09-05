@@ -57,6 +57,21 @@ export type TypeMaterialsState = Partial<Record<ReimbursementType, Partial<Recor
 export const emptyMaterialEntry = (): MaterialEntry => ({ files: [], existingUrls: [], existingPaths: [] });
 const emptyMaterials = (): TypeMaterialsState => ({});
 
+/** 提取材料状态中可序列化的原有文件引用（草稿随存用；新上传的 File 不可序列化，不进草稿） */
+const existingRefsOf = (ms: TypeMaterialsState): Record<string, Record<string, { existingUrls: string[]; existingPaths: string[] }>> => {
+  const out: Record<string, Record<string, { existingUrls: string[]; existingPaths: string[] }>> = {};
+  for (const t of Object.keys(ms) as ReimbursementType[]) {
+    for (const k of Object.keys(ms[t] || {}) as MaterialKey[]) {
+      const e = ms[t]?.[k];
+      if (e && (e.existingUrls.length || e.existingPaths.length)) {
+        if (!out[t]) out[t] = {};
+        out[t][k] = { existingUrls: e.existingUrls, existingPaths: e.existingPaths };
+      }
+    }
+  }
+  return out;
+};
+
 function loadAuth(): { token: string; user: any } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -105,6 +120,40 @@ export default function App() {
     setMaterials(p => ({ ...p, [type]: { ...p[type], [key]: { ...emptyMaterialEntry(), ...p[type]?.[key], existingUrls: [], existingPaths: [] } } }));
   }, []);
 
+  // 删除某材料的原有文件（仅本轮重编辑会话）：平行移除 URL/路径引用，服务端物理文件与历史存档不动。
+  // 发票联动：同步删该类型第 index 个发票区块（后端按"类型内文件↔类型内区块"同序配对）并重算 actual_total。
+  const removeExistingFile = useCallback((type: ReimbursementType, key: MaterialKey, index: number) => {
+    setMaterials(p => {
+      const entry = p[type]?.[key];
+      if (!entry || index < 0 || index >= entry.existingUrls.length) return p;
+      return {
+        ...p,
+        [type]: { ...p[type], [key]: {
+          ...entry,
+          existingUrls: entry.existingUrls.filter((_, i) => i !== index),
+          existingPaths: entry.existingPaths.filter((_, i) => i !== index),
+        } },
+      };
+    });
+    if (key === 'invoices') {
+      // 区块全局下标在更新器内用删除前的旧 invoices 算出（该类型第 index 个）
+      setFormData(p => {
+        let skip = index;
+        let invIndex = -1;
+        for (let i = 0; i < p.invoices.length; i++) {
+          if (p.invoices[i].reimb_type === type) {
+            if (skip === 0) { invIndex = i; break; }
+            skip -= 1;
+          }
+        }
+        if (invIndex < 0) return p;   // 防御：未找到对应区块时只删文件引用
+        const invoices = p.invoices.filter((_, i) => i !== invIndex);
+        let total = 0; for (const inv of invoices) total += inv.reimbursement_amount || 0;
+        return { ...p, invoices, actual_total: total };
+      });
+    }
+  }, []);
+
   const handleLogin = useCallback((token: string, user: any) => {
     saveAuth(token, user);
     setAuth({ token, user });
@@ -130,24 +179,40 @@ export default function App() {
   const saveDraft = useCallback(async () => {
     try {
       const step = location.pathname.includes('fill') ? 2 : location.pathname.includes('review') ? 3 : 1;
-      const payload = { draft_id: draftId, activity_name: formData.activity_name, org_name: formData.org_name, current_step: step, form_data: formData, ocr_results: ocrResults, user_email: auth?.user?.email || '' };
+      // 重编辑场景：原有文件引用（可序列化部分）藏入 form_data 私有键随草稿存取，
+      // 恢复时不丢失未删除的原有文件；该键仅草稿路径读写，提交时按字段白名单挑取不受影响
+      const payload = { draft_id: draftId, activity_name: formData.activity_name, org_name: formData.org_name, current_step: step, form_data: { ...formData, _existing_materials: existingRefsOf(materials) }, ocr_results: ocrResults, user_email: auth?.user?.email || '' };
       const r = await fetch('/api/v1/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const j = await r.json();
       if (j.success) setDraftId(j.draft_id);
       return j.success;
     } catch { return false; }
-  }, [formData, ocrResults, draftId, auth, location.pathname]);
+  }, [formData, materials, ocrResults, draftId, auth, location.pathname]);
 
   const restoreDraft = useCallback((draft: any) => {
     // 旧草稿迁移：type → types 数组；发票补类型标签；OCR 结果按类型打包
     const raw: any = { ...(draft.form_data || emptyForm) };
+    const existing = raw._existing_materials || {};   // 草稿随存的原有文件引用（重编辑不丢文件）
+    delete raw._existing_materials;
     const types: ReimbursementType[] = (raw.types?.length ? raw.types : (raw.type ? [raw.type] : ['vat']))
       .filter((t: string) => ['vat', 'insurance', 'travel', 'bulk', 'large'].includes(t)) as ReimbursementType[];
     const invoices: InvoiceSection[] = (raw.invoices || []).map((inv: any) => ({ ...inv, reimb_type: inv.reimb_type || types[0] }));
     setFormData({ ...emptyForm, ...raw, types, invoices });
     const ocr: any = draft.ocr_results || {};
     setOcrResults(Array.isArray(ocr) ? { [types[0]]: ocr } : ocr);
-    setMaterials(emptyMaterials());
+    setMaterials(p => {
+      const next: TypeMaterialsState = { ...p };
+      (Object.keys(existing) as string[]).forEach(t => {
+        (Object.keys(existing[t] || {}) as string[]).forEach(k => {
+          const e = existing[t][k];
+          if (e && (e.existingUrls?.length || e.existingPaths?.length)) {
+            const type = t as ReimbursementType; const key = k as MaterialKey;
+            next[type] = { ...next[type], [key]: { ...emptyMaterialEntry(), ...next[type]?.[key], existingUrls: e.existingUrls || [], existingPaths: e.existingPaths || [] } };
+          }
+        });
+      });
+      return next;
+    });
     setDraftId(draft.id); setSubmitResult(null);
     const step = draft.current_step || 1;
     navigate(step === 1 ? '/member/upload' : step === 2 ? '/member/fill' : '/member/review');
@@ -259,7 +324,7 @@ export default function App() {
   }, [materials, formData.invoices, navigate]);
 
   const wizardProps = {
-    materials, setMaterialFiles, clearMaterialExisting,
+    materials, setMaterialFiles, clearMaterialExisting, removeExistingFile,
     ocrResults, setOcrResults: setOcrResultsByType, ocrLoading, setOcrLoading, applyOCRResults,
     onAddManualInvoice: addInvoice,
     invoiceSectionCounts: Object.fromEntries(SELECTABLE_TYPES.map(t => [t, formData.invoices.filter(i => i.reimb_type === t).length])) as Partial<Record<ReimbursementType, number>>,
