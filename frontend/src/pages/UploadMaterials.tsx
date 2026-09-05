@@ -12,13 +12,12 @@ import RuleTips, { RuleTipItem } from '../components/RuleTips';
 interface Props {
   materials: TypeMaterialsState;
   setMaterialFiles: (type: ReimbursementType, key: MaterialKey, files: File[]) => void;
-  clearMaterialExisting: (type: ReimbursementType, key: MaterialKey) => void;
   removeExistingFile: (type: ReimbursementType, key: MaterialKey, index: number) => void;
   ocrResults: Partial<Record<ReimbursementType, OCRResult[]>>;
   setOcrResults: (type: ReimbursementType, results: OCRResult[]) => void;
   ocrLoading: boolean;
   setOcrLoading: (v: boolean) => void;
-  applyOCRResults: (type: ReimbursementType, results: OCRResult[]) => void;
+  applyOCRResults: (type: ReimbursementType, results: OCRResult[], existingCount?: number) => void;
   onAddManualInvoice: (type: ReimbursementType) => void;
   invoiceSectionCounts: Partial<Record<ReimbursementType, number>>;
   onNext: () => void;
@@ -37,8 +36,9 @@ const typeHasContent = (materials: TypeMaterialsState, type: ReimbursementType, 
 
 /**
  * 「原有文件」区（仅重编辑会话出现）：head 行 = label 左 + 紫色编辑按钮右，下方 chips 行。
- * 编辑态下每张 chip 右上角出现 × 可删除；发票文件数与区块数不一致（removable=false）时
- * chips 不显示 ×，仅展示引导文案。编辑态为块内局部状态：随卡片卸载复位，删除过程中保持开启。
+ * 编辑态下每张 chip 右上角出现 × 可删除；removable=false（发票文件数与报销区块数不一致，
+ * 无法按序号安全删除）时 chips 不显示 ×，常驻展示引导文案（指向第 2 步删区块或整组重传替换）。
+ * 编辑态为块内局部状态：随卡片卸载复位，删除过程中保持开启。
  */
 function ExistingFilesBlock({ label, icon, urls, removable, onRemove }: {
   label: string;
@@ -74,10 +74,10 @@ function ExistingFilesBlock({ label, icon, urls, removable, onRemove }: {
           </div>
         ))}
       </div>
-      {editing && !removable && (
+      {!removable && (
         <div className="existing-files-note">
           <Icon name="alert-triangle" size={13} />
-          <span>该类型{label}文件数与报销表区块数不一致，无法按序号对应删除。请保留文件，改用第 2 步「填写报销表」页各发票卡片的「删除」按钮处理区块，或在下方重新上传{label}并识别以整体替换。</span>
+          <span>{label}文件数与报销表区块数不一致，无法进入下一步。请在第 2 步「填写报销表」页删除多余的发票区块，或重新上传{label}并识别以整组替换。</span>
         </div>
       )}
     </div>
@@ -89,7 +89,9 @@ const typeComplete = (materials: TypeMaterialsState, type: ReimbursementType, in
   TYPE_MATERIALS[type].every(k => {
     const cfg = materialFor(type, k);
     const count = entryFor(materials, type, k).files.length + entryFor(materials, type, k).existingUrls.length;
-    if (k === 'invoices') return (invoiceSectionCounts[type] || 0) > 0 && count >= cfg.minCount;   // OCR 或手动票
+    // 发票：区块必须与文件数严格对齐（识别 / 删除 / 手动补齐后自然满足）；
+    // 新增未识别完、数量不一致（历史遗留）时禁止进入下一步，防文件与报销表数据错位
+    if (k === 'invoices') return count > 0 && count === (invoiceSectionCounts[type] || 0);
     return count >= cfg.minCount;
   }) &&
   TYPE_MATERIALS[type].every(k => {
@@ -101,7 +103,6 @@ const typeComplete = (materials: TypeMaterialsState, type: ReimbursementType, in
 export default function UploadMaterials({
   materials,
   setMaterialFiles,
-  clearMaterialExisting,
   removeExistingFile,
   ocrResults,
   setOcrResults,
@@ -121,7 +122,8 @@ export default function UploadMaterials({
   const isReEdit = SELECTABLE_TYPES.some(t => TYPE_MATERIALS[t].some(k => entryFor(materials, t, k).existingUrls.length > 0 || entryFor(materials, t, k).existingPaths.length > 0));
 
   const handleBatchOCR = async () => {
-    const invoiceFiles = entryFor(materials, activeType, 'invoices').files;
+    const invoiceEntry = entryFor(materials, activeType, 'invoices');
+    const invoiceFiles = invoiceEntry.files;
     if (invoiceFiles.length === 0) return;
     setOcrLoading(true);
     setOcrErrors(p => ({ ...p, [activeType]: '' }));
@@ -138,7 +140,8 @@ export default function UploadMaterials({
       if (failed.length > 0) setOcrErrors(p => ({ ...p, [activeType]: `${failed.length} 张发票识别失败：${failed.map(f => f.filename).join('、')}` }));
       const successResults: OCRResult[] = results.filter(r => r.success && r.data).map(r => r.data!);
       setOcrResults(activeType, successResults);
-      applyOCRResults(activeType, successResults);
+      // existingCount = 剩余原有发票数：区块与该数一致时保留原区块、新结果接尾（原有+新增一并进入报销表）
+      applyOCRResults(activeType, successResults, invoiceEntry.existingUrls.length);
     } catch { setOcrErrors(p => ({ ...p, [activeType]: '网络错误，请检查后端是否启动' })); }
     finally { setOcrLoading(false); }
   };
@@ -151,12 +154,7 @@ export default function UploadMaterials({
       next = next.slice(0, cfg.maxCount);
     }
     setMaterialFiles(activeType, key, next);
-    // 重编辑时新增发票文件 = 替换原有发票（与既有增值税行为一致），需重新识别
-    const entry = entryFor(materials, activeType, key);
-    if (key === 'invoices' && cfg.useOCR && next.length > 0 && (entry.existingUrls.length > 0 || entry.existingPaths.length > 0)) {
-      setOcrResults(activeType, []);
-      clearMaterialExisting(activeType, key);
-    }
+    // 重编辑新增发票不再整组替换：原有文件保留，识别成功后由 applyOCRResults 保留原区块、新结果接尾
   };
 
   // 删除原有文件：统一先确认；发票额外提示联动删除对应区块并重算合计
@@ -221,7 +219,7 @@ export default function UploadMaterials({
         <div className="banner-purple">
           <Icon name="edit" size={16} />
           <span style={{ fontWeight: 600 }}>正在重新编辑被打回的报销申请</span>
-          <span style={{ marginLeft: 12 }}>原有文件已保留，可替换或追加。仅替换材料不影响已填写内容。</span>
+          <span style={{ marginLeft: 12 }}>原有文件已保留，可删除或新增。新增发票识别后与原有一并进入报销表，不覆盖原有内容。</span>
         </div>
       )}
 
@@ -260,7 +258,7 @@ export default function UploadMaterials({
               onRemove={(i) => void handleRemoveExistingFile(key, i)}
             />
             <FileUploader file={null} setFile={() => {}} files={entry.files} setFiles={handleSetFiles(key)}
-              label={isReEdit ? "替换或追加（可选）" : `点击或拖拽上传${cfg.label}（可多选）`} accept={cfg.accept} hint={cfg.hint} multiple />
+              label={isReEdit ? "新增上传（可选）" : `点击或拖拽上传${cfg.label}（可多选）`} accept={cfg.accept} hint={cfg.hint} multiple />
 
             {isOCRInvoice && entry.files.length > 0 && activeOCR.length === 0 && (
               <button className="btn btn-primary" onClick={handleBatchOCR} disabled={ocrLoading} style={{ marginTop: 16 }}>
@@ -268,6 +266,18 @@ export default function UploadMaterials({
               </button>
             )}
             {isOCRInvoice && ocrError && <div className="alert alert-error" style={{ marginTop: 12 }}>{ocrError}</div>}
+            {isOCRInvoice && (() => {
+              const diff = (invoiceSectionCounts[activeType] || 0) - (entry.files.length + entry.existingUrls.length);
+              if (diff === 0) return null;
+              return (
+                <div className="alert alert-warn" style={{ marginTop: 12 }}>
+                  <Icon name="alert-triangle" size={15} />
+                  <span>{cfg.label}文件数（{entry.files.length + entry.existingUrls.length}）与报销区块数（{invoiceSectionCounts[activeType] || 0}）不一致，无法进入下一步：
+                    {diff < 0 ? <>请完成新增{cfg.label}的识别（失败的可手动添加补录），或移除多余文件后再试</> : <>请在第 2 步「填写报销表」页删除多余的发票区块，或补充上传{cfg.label}</>}
+                  </span>
+                </div>
+              );
+            })()}
             {isOCRInvoice && showManualAdd && (
               <button className="btn btn-secondary btn-sm" onClick={() => onAddManualInvoice(activeType)} style={{ marginTop: 12 }}>
                 <Icon name="edit" size={14} /> 手动添加{cfg.label}（不识别，在下一步填写）

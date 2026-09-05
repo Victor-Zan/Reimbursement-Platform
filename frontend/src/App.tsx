@@ -116,10 +116,6 @@ export default function App() {
     setOcrResults(p => ({ ...p, [type]: results }));
   }, []);
 
-  const clearMaterialExisting = useCallback((type: ReimbursementType, key: MaterialKey) => {
-    setMaterials(p => ({ ...p, [type]: { ...p[type], [key]: { ...emptyMaterialEntry(), ...p[type]?.[key], existingUrls: [], existingPaths: [] } } }));
-  }, []);
-
   // 删除某材料的原有文件（仅本轮重编辑会话）：平行移除 URL/路径引用，服务端物理文件与历史存档不动。
   // 发票联动：同步删该类型第 index 个发票区块（后端按"类型内文件↔类型内区块"同序配对）并重算 actual_total。
   const removeExistingFile = useCallback((type: ReimbursementType, key: MaterialKey, index: number) => {
@@ -263,8 +259,12 @@ export default function App() {
       return { ...p, invoices, actual_total: total };
     });
   }, []);
-  // OCR 结果只替换所属类型的发票区块，其他类型的发票保留
-  const applyOCRResults = useCallback((type: ReimbursementType, results: OCRResult[]) => {
+  // 应用 OCR 结果到某类型的发票区块。
+  // 该类型区块列表中「前 existingCount 个」恒为原有文件的对应区块（删除联动双侧同步、
+  // OCR 只接尾部，均保序）；因此保留前 min(existingCount, len) 个原区块（含用户已改内容），
+  // 其后的区块（旧识别追加/手动补录）整段替换为新识别结果——文件顺序（原有在前、新增在后）
+  // 与区块顺序同向对齐，提交/标注/打包的同序配对不受影响。无原有文件（新申请）时整段替换。
+  const applyOCRResults = useCallback((type: ReimbursementType, results: OCRResult[], existingCount = 0) => {
     if (!results.length) return;
     const sections: InvoiceSection[] = results.map(r => ({
       buyer_name: r.buyer_name, buyer_tax_id: r.buyer_tax_id, buyer_name_valid: r.buyer_name_valid, buyer_tax_id_valid: r.buyer_tax_id_valid,
@@ -274,11 +274,19 @@ export default function App() {
         : [{ name: '', unit_price: 0, quantity: 1, amount: 0, purchase_channel: '网购', reusable: '否', source_invoice_item: false }],
     }));
     setFormData(p => {
-      const invoices = p.invoices.filter(inv => inv.reimb_type !== type);
+      const merged = [...p.invoices];
       const firstIdx = p.invoices.findIndex(inv => inv.reimb_type === type);
-      if (firstIdx >= 0) invoices.splice(firstIdx, 0, ...sections); else invoices.push(...sections);
-      let total = 0; for (const inv of invoices) total += inv.reimbursement_amount || 0;
-      return { ...p, invoices, actual_total: total };
+      if (firstIdx < 0) {
+        merged.push(...sections);
+      } else {
+        let end = firstIdx;
+        while (end < p.invoices.length && p.invoices[end].reimb_type === type) end += 1;
+        const len = end - firstIdx;
+        const keep = Math.min(existingCount, len);
+        merged.splice(firstIdx, len, ...p.invoices.slice(firstIdx, firstIdx + keep), ...sections);
+      }
+      let total = 0; for (const inv of merged) total += inv.reimbursement_amount || 0;
+      return { ...p, invoices: merged, actual_total: total };
     });
   }, []);
 
@@ -324,7 +332,7 @@ export default function App() {
   }, [materials, formData.invoices, navigate]);
 
   const wizardProps = {
-    materials, setMaterialFiles, clearMaterialExisting, removeExistingFile,
+    materials, setMaterialFiles, removeExistingFile,
     ocrResults, setOcrResults: setOcrResultsByType, ocrLoading, setOcrLoading, applyOCRResults,
     onAddManualInvoice: addInvoice,
     invoiceSectionCounts: Object.fromEntries(SELECTABLE_TYPES.map(t => [t, formData.invoices.filter(i => i.reimb_type === t).length])) as Partial<Record<ReimbursementType, number>>,
